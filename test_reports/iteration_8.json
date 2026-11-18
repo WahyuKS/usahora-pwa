@@ -1,0 +1,35 @@
+{
+  "summary": "Phase 1 retest #3 (manifest-based native repo). Jest: LEGACY_FILE=/tmp/legacy_real_inner.json gives 53 passed; plain run gives 52 passed + 1 skipped. Both runs print 'Jest did not exit one second after the test run' because the 15 s queue timers are never cleared. The iter-7 probes were adapted to the manifest design as /app/tests/t1_native_repo_probes_iter8.test.ts.txt. It ran from a temporary copy in frontend/__tests__/, deleted afterwards. Result: 12/15 pass. All the requested items PASS. A failed commit (data write or manifest switch) never reappears after restart, and its orphans are cleaned. refresh() during a tx with a failed switch does not wipe tables. Outside saves during a tx are queued and kept. A leftover old version never overwrites newer data. A corrupt manifest ({rusak, [], 5, \"str\"}) gives StorageReadError at open. No journal key is written (2 multiSets per tx). Migration commit failure gives rolledBack:true, with nothing visible after reopen. The queue is not blocked by failing ops. Three new findings FAIL: N13 (MEDIUM) an op rejected by the 15 s wait timeout still runs later; N12 (MEDIUM) orphan cleanup deletes data of another repo whose name starts with '<name>_'; N6 (LOW) refresh() does not validate the manifest shape. Backend regression: 15/15 pass on fresh TEST_ users. No demo sales were created. UI smoke: demo login leads to the dashboard with KPIs, 0 page errors, indexedDB.databases()==[]. Deprecated packages: none detected. The repo is still not wired into store.ts; tracked diffs are unchanged (.gitignore, package.json, storage/index.web.ts).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "repo.native queue timeout (N13)", "issue": "queued() rejects the caller after 15 s but does not cancel the op. The op stays in the chain and executes once the running op finishes. Repro: a tx is held open for more than 15 s, and repo.put('sales', …) issued meanwhile rejects with 'menunggu terlalu lama'. After the tx ends, 'sale-retry-me' is on disk anyway. This is the same class of bug as the old iter-7 N4: the caller is told FAILED, the sale is applied, the user retries, and the sale is duplicated. It also applies to a nested repo call inside a tx callback: the tx fails, but the nested write is applied afterwards. Reference: src/data/db/repo.native.ts:113-121", "affected_testIDs": []},
+      {"flow": "repo.native orphan cleanup on open (N12)", "issue": "The cleanup deletes every key that starts with 'usahora_v2_<name>_', contains '@' and is not in this repo's manifest. Opening repo 'biz' therefore deletes all table versions of repo 'biz_2' (and any '<name>_*' repo). The next open of 'biz_2' fails with 'Data tabel products hilang dari perangkat', which is permanent silent data loss. Reference: src/data/db/repo.native.ts:62-66", "affected_testIDs": []},
+      {"flow": "repo.native refresh() (N6)", "issue": "refresh() assigns the parsed manifest without the object/array check done at open. A manifest of '[]' (or a number or string) makes every table read as empty with no error. The next write then spreads that value into a new manifest, which drops all other tables, and the next open deletes their versions as orphans. Reference: src/data/db/repo.native.ts:141-144", "affected_testIDs": []}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/tests/t1_native_repo_probes_iter8.test.ts.txt", "/app/test_reports/pytest/pytest_iter8.xml", "/app/frontend/__tests__/native-safety.test.ts"],
+  "action_items": [
+    "MEDIUM repo.native.ts queued(): on timeout, mark the entry as timedOut and skip fn() when its turn comes: chain.then(() => { if (timedOut) throw err; started = true; clearTimeout(timer); return fn(); }). Add a regression test: an op that timed out must not be on disk after the blocking tx finishes (probe N13). Also consider whether 15 s from enqueue is too strict for a large migration on slow Android devices.",
+    "MEDIUM repo.native.ts:62-66: restrict orphan cleanup to this repo's own table keys. Delete only if ALL_TABLES.some(t => k.startsWith(`${prefix}${t}@`)), or use a name separator that cannot appear in names. Add a test where opening 'biz' keeps the data of 'biz_2' (probe N12).",
+    "LOW repo.native.ts:141-144: validate the manifest in refresh() the same way as at open (factor out a readManifest() helper), so that a corrupt manifest throws StorageReadError (probe N6).",
+    "LOW repo.native.ts:117-120: clear the wait timer once the op starts or settles. Today every op leaves a 15 s timer, which causes the 'Jest did not exit' warning and timer buildup on device.",
+    "LOW repo.native.ts:82-90: guard against gen collisions. If next[t] === old[t] (same ms + seq after a restart or a clock rewind), step 1 overwrites the live key and step 3 removes the new data. Skip the remove when old[t] === gen, or add a random suffix to gen."
+  ],
+  "critical_code_review_comments": [
+    "The manifest design is sound: one atomic manifest write is the only visibility step, the cache is updated only after the switch, and the queue serializes refresh() too. The iter-7 findings N1-N10 are resolved.",
+    "migrate-legacy.ts: snapshotAll, transaction and restore are separate queued ops. A save made between the commit and a verification-failure restore would be erased by restore() (clear + bulkPut of the old snapshot). This is LOW while the repo is unwired; run migration before any other repo use, or perform the verify and restore inside one queued unit.",
+    "close() is not queued; it clears the cache while an op may be running. Minor.",
+    "Known documented risk (not to fix now): Android ~2MB per-value read limit for large tables; expo-sqlite is planned."
+  ],
+  "updated_files": ["/app/tests/t1_native_repo_probes_iter8.test.ts.txt (new probe file, not in the jest path)"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "Jest 53/53 (with LEGACY_FILE), T1 probes 12/15, UI smoke 100%"},
+  "seed_data_creation": "Fresh TEST_ users created by backend tests only; no demo-account sales created.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To run the probes: cp /app/tests/t1_native_repo_probes_iter8.test.ts.txt /app/frontend/__tests__/t1_probes_iter8.test.ts, then npx jest __tests__/t1_probes_iter8.test.ts, then delete the copy. N13 takes about 15 s of real time. Backend: export EXPO_PUBLIC_BACKEND_URL from frontend/.env, then pytest backend/tests/test_usahora_api.py. indexedDB.databases() must stay [] until Phase 2.",
+  "rca_of_issue": "N13: Promise.race only rejects the caller's promise; the original run promise is still chained and executes later. N12: the cleanup filter uses prefix + '@' instead of prefix + known table + '@'. N6: refresh() duplicates the manifest read without the validation done in createRepo."
+}

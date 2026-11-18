@@ -1,0 +1,69 @@
+/// <reference types="jest" />
+// T1 safety probes for repo.native.ts / migrate-legacy.ts (each test PASSES when the flaw is present)
+import "fake-indexeddb/auto";
+
+const mockMem = new Map<string, string>();
+let mockFailGet = false;
+jest.mock("@react-native-async-storage/async-storage", () => ({
+  __esModule: true,
+  default: {
+    getItem: async (k: string) => { if (mockFailGet) throw new Error("read I/O error"); return mockMem.get(k) ?? null; },
+    setItem: async (k: string, v: string) => { mockMem.set(k, v); },
+    removeItem: async (k: string) => { mockMem.delete(k); },
+  },
+}));
+
+import { migrateLegacy } from "@/src/data/db/migrate-legacy";
+import { createRepo, type KV } from "@/src/data/db/repo.native";
+
+describe("T1 probes", () => {
+  it("FLAW: transient read error (swallowed like storage.getItem does) is treated as empty table -> next write wipes table", async () => {
+    const m = new Map<string, string>();
+    let fail = false;
+    // same semantics as defaultKV(): storage.getItem never throws, returns fallback (null) on error
+    const kv: KV = { get: async (k) => { try { if (fail) throw new Error("io"); return m.get(k) ?? null; } catch { return null; } }, set: async (k, v) => { m.set(k, v); } };
+    const seed = await createRepo("probe1", kv);
+    await seed.bulkPut("products", [{ id: "a" }, { id: "b" }]);
+    seed.close();
+    const repo = await createRepo("probe1", kv);
+    fail = true;
+    const seen = await repo.getAll("products");
+    fail = false;
+    await repo.put("products", { id: "c" });
+    const persisted = JSON.parse(m.get("usahora_v2_probe1_products")!);
+    console.log("rows seen during read error:", seen.length, "persisted after write:", persisted.map((r: any) => r.id));
+    expect(persisted.map((r: any) => r.id)).toEqual(["c"]);
+  });
+
+  it("FLAW: native transaction commit is not atomic across tables", async () => {
+    const m = new Map<string, string>();
+    const kv: KV = { get: async (k) => m.get(k) ?? null, set: async (k, v) => { if (k.endsWith("_customers")) throw new Error("quota"); m.set(k, v); } };
+    const repo = await createRepo("probe2", kv);
+    await expect(repo.transaction(["products", "customers"], async (tx) => {
+      await tx.put("products", { id: "p" });
+      await tx.put("customers", { id: "c" });
+    })).rejects.toThrow("quota");
+    console.log("products persisted despite failed tx:", m.get("usahora_v2_probe2_products"));
+    expect(m.get("usahora_v2_probe2_products")).toBeDefined();
+  });
+
+  it("FLAW: failed non-tx write leaves in-memory cache diverged from disk", async () => {
+    const kv: KV = { get: async () => null, set: async () => { throw new Error("quota"); } };
+    const repo = await createRepo("probe3", kv);
+    await expect(repo.put("products", { id: "ghost" })).rejects.toThrow();
+    const ghost = await repo.get("products", "ghost");
+    console.log("ghost visible after failed write:", !!ghost);
+    expect(ghost).toBeDefined();
+  });
+
+  it("migration on native with mid-commit failure: what state remains", async () => {
+    const m = new Map<string, string>();
+    let fail = true;
+    const kv: KV = { get: async (k) => m.get(k) ?? null, set: async (k, v) => { if (fail && k.endsWith("_sales")) throw new Error("quota"); m.set(k, v); } };
+    const repo = await createRepo("probe4", kv);
+    const raw = JSON.stringify({ products: [{ id: "p1", updated_at: "1" }], sales: [{ id: "s1", updated_at: "1" }], meta: {} });
+    const res = await migrateLegacy({ repo, readLegacy: async () => raw });
+    console.log("migration result:", JSON.stringify(res), "products on disk:", m.get("usahora_v2_probe4_products"));
+    expect(res.status).toBe("failed");
+  });
+});

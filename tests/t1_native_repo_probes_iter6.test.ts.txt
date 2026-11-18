@@ -1,0 +1,156 @@
+/// <reference types="jest" />
+// T1 iteration-6 probes: each test asserts the FIXED behaviour (passes when the flaw is gone)
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { migrateLegacy, MIGRATION_ERROR_KEY, MIGRATION_KEY } from "@/src/data/db/migrate-legacy";
+import { createRepo, StorageReadError, type KV } from "@/src/data/db/repo.native";
+
+const memKV = (m: Map<string, string>, o: { failGet?: () => boolean; failSet?: (e: [string, string][]) => boolean } = {}): KV => ({
+  get: async (k) => { if (o.failGet?.()) throw new Error("io"); return m.get(k) ?? null; },
+  multiSet: async (e) => { if (o.failSet?.(e)) throw new Error("quota"); e.forEach(([k, v]) => m.set(k, v)); },
+});
+
+describe("T1 probes (fixed behaviour)", () => {
+  it("P1 read error throws StorageReadError and the table survives the next write", async () => {
+    const m = new Map<string, string>();
+    let fail = false;
+    const kv = memKV(m, { failGet: () => fail });
+    const seed = await createRepo("p1", kv);
+    await seed.bulkPut("products", [{ id: "a" }, { id: "b" }]);
+    const repo = await createRepo("p1", kv);
+    fail = true;
+    await expect(repo.getAll("products")).rejects.toBeInstanceOf(StorageReadError);
+    await expect(repo.put("products", { id: "c" })).rejects.toBeInstanceOf(StorageReadError);
+    fail = false;
+    await repo.put("products", { id: "c" });
+    expect(JSON.parse(m.get("usahora_v2_p1_products")!).map((r: any) => r.id).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("P2 transaction commit failure leaves every table untouched (disk + cache)", async () => {
+    const m = new Map<string, string>();
+    let fail = false;
+    const repo = await createRepo("p2", memKV(m, { failSet: () => fail }));
+    await repo.put("products", { id: "old" });
+    fail = true;
+    await expect(repo.transaction(["products", "customers"], async (tx) => {
+      await tx.put("products", { id: "p" });
+      await tx.put("customers", { id: "c" });
+    })).rejects.toThrow("quota");
+    expect(m.get("usahora_v2_p2_customers")).toBeUndefined();
+    expect(JSON.parse(m.get("usahora_v2_p2_products")!).map((r: any) => r.id)).toEqual(["old"]);
+    expect((await repo.getAll("products")).map((r) => r.id)).toEqual(["old"]);
+    expect(await repo.get("customers", "c")).toBeUndefined();
+  });
+
+  it("P3 failed non-tx write is invisible afterwards", async () => {
+    const repo = await createRepo("p3", memKV(new Map(), { failSet: () => true }));
+    await expect(repo.put("products", { id: "ghost" })).rejects.toThrow();
+    expect(await repo.get("products", "ghost")).toBeUndefined();
+    await expect(repo.clear("products")).rejects.toThrow();
+  });
+
+  it("P4 transaction commits with exactly one multiSet call", async () => {
+    const m = new Map<string, string>();
+    const calls: number[] = [];
+    const kv = memKV(m, { failSet: (e) => { calls.push(e.length); return false; } });
+    const repo = await createRepo("p4", kv);
+    await repo.transaction(["products", "customers", "sales"], async (tx) => {
+      await tx.put("products", { id: "p" });
+      await tx.put("customers", { id: "c" });
+      await tx.put("sales", { id: "s" });
+      await tx.put("products", { id: "p2" });
+    });
+    expect(calls).toEqual([3]);
+  });
+
+  it("P5 migration mid-commit failure: nothing written, error key stored separately, done record kept", async () => {
+    const m = new Map<string, string>();
+    let fail = false;
+    const repo = await createRepo("p5", memKV(m, { failSet: (e) => fail && e.some(([k]) => k.endsWith("_sales")) }));
+    const raw1 = JSON.stringify({ products: [{ id: "p1", updated_at: "2024-01-01T00:00:00Z" }], meta: { counters: { TRX: 5 } } });
+    const r1 = await migrateLegacy({ repo, readLegacy: async () => raw1 });
+    expect(r1.status).toBe("done");
+    fail = true;
+    const raw2 = JSON.stringify({ products: [{ id: "p2" }], sales: [{ id: "s1" }], meta: {} });
+    const r2 = await migrateLegacy({ repo, readLegacy: async () => raw2 });
+    expect(r2.status).toBe("failed");
+    const fresh = await createRepo("p5", memKV(m));
+    expect(await fresh.get("products", "p2")).toBeUndefined();
+    expect((await fresh.get("kv", MIGRATION_KEY))?.value?.status).toBe("done");
+    // NOTE: error record write includes the kv table only -> succeeds
+    expect((await fresh.get("kv", MIGRATION_ERROR_KEY))?.value?.status).toBe("failed");
+  });
+
+  it("P6 counters never move backwards and numeric/mixed-offset updated_at compared by time", async () => {
+    const m = new Map<string, string>();
+    const repo = await createRepo("p6", memKV(m));
+    await migrateLegacy({ repo, readLegacy: async () => JSON.stringify({ products: [{ id: "x", name: "new", updated_at: "2024-01-01T10:00:00+07:00" }], meta: { counters: { TRX: 10, INV: 2 } } }) });
+    // 03:30Z is later than 10:00+07:00 (= 03:00Z) although the string compares lower
+    await migrateLegacy({ repo, readLegacy: async () => JSON.stringify({ products: [{ id: "x", name: "newer", updated_at: "2024-01-01T03:30:00Z" }], meta: { counters: { TRX: 3, INV: 7 } } }) });
+    const fresh = await createRepo("p6", memKV(m));
+    expect((await fresh.get("products", "x"))?.name).toBe("newer");
+    expect((await fresh.get("kv", "meta"))?.value?.counters).toEqual({ TRX: 10, INV: 7 });
+  });
+
+  it("P7 real AsyncStorage path: getItem failure throws, multiSet failure leaves cache clean", async () => {
+    const repo = await createRepo("p7");
+    await repo.put("products", { id: "a" });
+    expect(JSON.parse((await AsyncStorage.getItem("usahora_v2_p7_products"))!)[0].id).toBe("a");
+    const r2 = await createRepo("p7");
+    (AsyncStorage.getItem as jest.Mock).mockRejectedValueOnce(new Error("io"));
+    await expect(r2.getAll("products")).rejects.toBeInstanceOf(StorageReadError);
+    (AsyncStorage.multiSet as jest.Mock).mockRejectedValueOnce(new Error("quota"));
+    await expect(r2.put("products", { id: "b" })).rejects.toThrow("quota");
+    expect((await r2.getAll("products")).map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("P8 (race) two concurrent non-tx puts to the same table both persist", async () => {
+    const m = new Map<string, string>();
+    const kv: KV = { get: async (k) => m.get(k) ?? null, multiSet: async (e) => { await new Promise((r) => setTimeout(r, 5)); e.forEach(([k, v]) => m.set(k, v)); } };
+    const repo = await createRepo("p8", kv);
+    await repo.put("products", { id: "seed" });
+    await Promise.all([repo.put("products", { id: "a" }), repo.put("products", { id: "b" })]);
+    const disk = JSON.parse(m.get("usahora_v2_p8_products")!).map((r: any) => r.id).sort();
+    console.log("P8 disk after concurrent puts:", disk);
+    expect(disk).toEqual(["a", "b", "seed"]);
+  });
+
+  it("P9 (race) put during an open transaction is not lost by the tx commit", async () => {
+    const m = new Map<string, string>();
+    const repo = await createRepo("p9", memKV(m));
+    await repo.put("products", { id: "seed" });
+    await repo.transaction(["products"], async (tx) => {
+      await tx.put("products", { id: "tx" });
+      await repo.put("products", { id: "outside" }); // e.g. another screen saving meanwhile
+    });
+    const disk = JSON.parse(m.get("usahora_v2_p9_products")!).map((r: any) => r.id).sort();
+    console.log("P9 disk after tx + concurrent put:", disk);
+    expect(disk).toEqual(["outside", "seed", "tx"]);
+  });
+});
+// ---- web/native concurrency file ----
+/// <reference types="jest" />
+import "fake-indexeddb/auto";
+import { createRepo as createNative, type KV } from "@/src/data/db/repo.native";
+import { createRepo as createWeb } from "@/src/data/db/repo.web";
+
+it("WEB parity: concurrent puts both persist", async () => {
+  const repo = await createWeb("t1_p8web");
+  await Promise.all([repo.put("products", { id: "a" }), repo.put("products", { id: "b" })]);
+  expect((await repo.getAll("products")).map((r) => r.id).sort()).toEqual(["a", "b"]);
+});
+it("NATIVE: two concurrent transactions on same table (e.g. two sales decrementing stock)", async () => {
+  const m = new Map<string, string>();
+  const kv: KV = { get: async (k) => m.get(k) ?? null, multiSet: async (e) => { await new Promise((r) => setTimeout(r, 5)); e.forEach(([k, v]) => m.set(k, v)); } };
+  const repo = await createNative("t1_p10", kv);
+  await repo.put("products", { id: "p", stock: 10 });
+  const sell = () => repo.transaction(["products", "sales"], async (tx) => {
+    const p = await tx.get("products", "p");
+    await tx.put("products", { ...p, stock: p!.stock - 1 });
+    await tx.put("sales", { id: Math.random().toString() });
+  });
+  await Promise.all([sell(), sell()]);
+  const fresh = await createNative("t1_p10", kv);
+  console.log("stock:", (await fresh.get("products", "p"))?.stock, "sales:", (await fresh.getAll("sales")).length);
+  expect((await fresh.get("products", "p"))?.stock).toBe(8);
+});

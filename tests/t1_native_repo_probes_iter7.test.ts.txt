@@ -1,0 +1,151 @@
+/// <reference types="jest" />
+// T1 iteration-7 probes: each test asserts the SAFE behaviour (passes when the flaw is absent)
+import { migrateLegacy, MIGRATION_ERROR_KEY } from "@/src/data/db/migrate-legacy";
+import { createRepo, type KV } from "@/src/data/db/repo.native";
+
+type K = KV & { m: Map<string, string>; sets: [string, string][][]; failSet?: (e: [string, string][]) => boolean; failRemove?: boolean };
+const kvOf = (): K => {
+  const kv: K = {
+    m: new Map(), sets: [],
+    get: async (k) => kv.m.get(k) ?? null,
+    multiSet: async (e) => { kv.sets.push(e); if (kv.failSet?.(e)) throw new Error("quota"); e.forEach(([k, v]) => kv.m.set(k, v)); },
+    remove: async (k) => { if (kv.failRemove) throw new Error("rm"); kv.m.delete(k); },
+  };
+  return kv;
+};
+const ids = (kv: K, name: string, t: string) => JSON.parse(kv.m.get(`usahora_v2_${name}_${t}`) ?? "[]").map((r: any) => r.id).sort();
+const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
+
+describe("T1 iter7 probes", () => {
+  it("N1 unrelated save from another screen while a tx is awaiting is queued, not rejected", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n1", kv);
+    let outside: Promise<void> | undefined;
+    await repo.transaction(["sales"], async (tx) => {
+      await tx.put("sales", { id: "s1" });
+      // NOT nested: e.g. a timer / other screen fires while the sale tx awaits
+      outside = new Promise<void>((res, rej) => setTimeout(() => repo.put("products", { id: "other" }).then(res, rej), 0));
+      await tick(20);
+    });
+    let err: any = null;
+    await outside!.catch((e) => (err = e));
+    console.log("N1 outside put error:", err?.message ?? null);
+    expect(err).toBeNull();
+    expect(ids(kv, "n1", "products")).toEqual(["other"]);
+  });
+
+  it("N2 refresh() during an open tx + failed commit must not wipe tables when restoring previous values", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n2", kv);
+    await repo.put("products", { id: "p1" });
+    await repo.put("sales", { id: "old" });
+    let n = 0;
+    kv.failSet = (e) => e.length > 1 && ++n === 1; // main commit fails once, restore allowed
+    await expect(repo.transaction(["products", "sales"], async (tx) => {
+      await tx.put("products", { id: "p2" });
+      await tx.put("sales", { id: "s2" });
+      repo.refresh(); // e.g. a pull-to-refresh / migration verify on another path
+    })).rejects.toThrow();
+    console.log("N2 disk after failed commit:", ids(kv, "n2", "products"), ids(kv, "n2", "sales"));
+    expect(ids(kv, "n2", "products")).toEqual(["p1"]);
+    expect(ids(kv, "n2", "sales")).toEqual(["old"]);
+  });
+
+  it("N3 journal left behind (remove failed after success) must not overwrite newer data on next open", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n3", kv);
+    kv.failRemove = true;
+    await repo.transaction(["products", "sales"], async (tx) => {
+      await tx.put("products", { id: "p1", name: "v1" });
+      await tx.put("sales", { id: "s1" });
+    });
+    kv.failRemove = false;
+    await repo.put("products", { id: "p1", name: "v2-newer" });
+    await repo.put("sales", { id: "s2" });
+    const reopened = await createRepo("n3", kv);
+    const p = await reopened.get("products", "p1");
+    console.log("N3 after reopen: product name =", p?.name, "sales =", ids(kv, "n3", "sales"));
+    expect(p?.name).toBe("v2-newer");
+    expect(ids(kv, "n3", "sales")).toEqual(["s1", "s2"]);
+  });
+
+  it("N4 tx reported as FAILED must not be applied on next open (restore also failed)", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n4", kv);
+    await repo.put("products", { id: "p1", stock: 10 });
+    kv.failSet = (e) => e.some(([k]) => k.endsWith("_products")); // persistent failure on the table keys
+    await expect(repo.transaction(["products", "sales"], async (tx) => {
+      await tx.put("products", { id: "p1", stock: 9 });
+      await tx.put("sales", { id: "s1" });
+    })).rejects.toThrow();
+    kv.failSet = undefined;
+    const reopened = await createRepo("n4", kv);
+    const st = (await reopened.get("products", "p1"))?.stock, sales = await reopened.count("sales");
+    console.log("N4 after reopen: stock", st, "sales", sales, "journal left", kv.m.has("usahora_v2_n4__journal"));
+    expect(sales).toBe(0); // caller was told the sale failed -> user may retry -> duplicate sale
+  });
+
+  it("N5 leftover journal whose replay fails must not make createRepo fail forever", async () => {
+    const kv = kvOf();
+    kv.m.set("usahora_v2_n5__journal", JSON.stringify([["usahora_v2_n5_products", "[]"], ["usahora_v2_n5_sales", "[]"]]));
+    kv.failSet = () => true;
+    let err: any = null;
+    await createRepo("n5", kv).catch((e) => (err = e));
+    console.log("N5 createRepo with failing replay:", err?.message ?? "opened");
+    expect(err).toBeNull();
+  });
+
+  it("N6 corrupt journal value gives a clear StorageReadError-like error (not raw SyntaxError)", async () => {
+    const kv = kvOf();
+    kv.m.set("usahora_v2_n6__journal", "{rusak");
+    let err: any = null;
+    await createRepo("n6", kv).catch((e) => (err = e));
+    console.log("N6 corrupt journal:", err?.constructor?.name, err?.message);
+    expect(err === null || err.constructor.name === "StorageReadError").toBe(true);
+  });
+
+  it("N7 migration: commit failure reports rolledBack:true WITHOUT a restore of all tables", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n7", kv);
+    kv.failSet = (e) => e.length > 1; // only multi-table commit fails
+    const res = await migrateLegacy({ repo, readLegacy: async () => JSON.stringify({ products: [{ id: "p1" }], sales: [{ id: "s1" }], meta: {} }) });
+    const bigWrites = kv.sets.filter((e) => e.length >= 16).length;
+    console.log("N7 result", res.status, (res as any).rolledBack, "multiSets with >=16 entries:", bigWrites, "journal left:", kv.m.has("usahora_v2_n7__journal"));
+    expect(res.status).toBe("failed");
+    expect((res as any).rolledBack).toBe(true);
+    expect(kv.m.has("usahora_v2_n7_products")).toBe(false);
+    expect(kv.m.has("usahora_v2_n7__journal")).toBe(false);
+  });
+
+  it("N8 migration: parse failure while storage is failing returns {failed} instead of throwing", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n8", kv);
+    kv.failSet = () => true;
+    const res = await migrateLegacy({ repo, readLegacy: async () => "{rusak" });
+    expect(res.status).toBe("failed");
+  });
+
+  it("N9 a failing op does not block the queue; tx that throws resets inTx", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n9", kv);
+    await expect(repo.transaction(["products"], async () => { throw new Error("boom"); })).rejects.toThrow("boom");
+    kv.failSet = () => true;
+    await expect(repo.put("products", { id: "x" })).rejects.toThrow();
+    kv.failSet = undefined;
+    await repo.put("products", { id: "y" });
+    expect(ids(kv, "n9", "products")).toEqual(["y"]);
+  });
+
+  it("N10 migration parse-failure error record kept after reopen when a journal from an earlier failed tx exists", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n10", kv);
+    kv.failSet = (e) => e.some(([k]) => k.endsWith("_sales"));
+    await migrateLegacy({ repo, readLegacy: async () => JSON.stringify({ products: [{ id: "p2" }], sales: [{ id: "s1" }], meta: {} }) });
+    kv.failSet = undefined;
+    const errBefore = await repo.get("kv", MIGRATION_ERROR_KEY);
+    const reopened = await createRepo("n10", kv);
+    const errAfter = await reopened.get("kv", MIGRATION_ERROR_KEY);
+    console.log("N10 error record before reopen:", !!errBefore, "after reopen:", !!errAfter, "p2 after reopen:", !!(await reopened.get("products", "p2")));
+    expect(!!errAfter).toBe(!!errBefore);
+  });
+});

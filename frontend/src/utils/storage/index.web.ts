@@ -3,6 +3,8 @@
 // Values supported: string | number | boolean | null (JSON-serialized on disk).
 // Usage: import { storage } from "@/src/utils/storage"; await storage.getItem(key, fallback);
 // No Keychain on web — secure* helpers reuse AsyncStorage (no expo-secure-store).
+// NOTE: on web AsyncStorage is backed by window.localStorage (not IndexedDB). Use it only for small
+// settings; core inventory records go to the repository in src/data/db (IndexedDB on web).
 // Because of that, a key SecureStore rejects on native (":" "/" spaces) works here, so the web preview
 // never shows the bug. Keep secure keys to [A-Za-z0-9._-] ("auth_token"), same as index.ts.
 
@@ -11,7 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AssertNoExtras, StorageBase, StorageItemValue } from "./storage-base";
 
 export class Storage extends StorageBase {
-  // General KV — backed by AsyncStorage (its built-in web shim uses IndexedDB).
+  // General KV — backed by AsyncStorage (on web its shim uses window.localStorage).
   async getItem<Fallback extends StorageItemValue>(
     key: string,
     fallback: Fallback,

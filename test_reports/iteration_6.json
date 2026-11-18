@@ -1,0 +1,39 @@
+{
+  "summary": "Phase 1 retest (repository layer + legacy migration). The suite matches the expected counts: `npx jest` gives 45 passed + 1 skipped, and LEGACY_FILE=/tmp/legacy_real_inner.json gives 46 passed. All iteration-5 flaws are fixed and confirmed by new T1 probes P1-P7 run against the fixed behaviour: (1) failed reads throw StorageReadError, nothing is cached and the table survives the next write; (2) a transaction commits with ONE multiSet, and a failed commit leaves disk and cache untouched; (3) a failed write is not visible in reads; (4) migration verifies after refresh() from disk, failures are stored under MIGRATION_ERROR_KEY and the earlier 'done' record is kept, counters merge by max, updated_at is compared by Date.parse (mixed-offset case verified); (5) the real AsyncStorage path works through the jest mock (getItem/multiSet rejections behave correctly). The original iteration-5 probes now fail as expected: they asserted the flaws and used the old KV.set interface. NEW finding (not fixed): native repo has no write serialisation. Concurrent puts and concurrent transactions on the same table lose updates (2 parallel sales: stock 10 -> 9 instead of 8, and only 1 of 2 sales persisted). Web/Dexie does not have this problem. iOS AsyncStorage multiSet is NOT atomic: verified in node_modules RNCAsyncStorage.mm. Android is atomic (SQLite transaction). Backend regression: 15/15 pass on test accounts, no demo sales created. Light UI regression: login demo, dashboard, products and settings load with no page errors, and indexedDB.databases() == []. Deprecated packages: none (no expo-av, expo-barcode-scanner or expo-background-fetch).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "repo.native.ts concurrency (lost update)", "issue": "No mutex or queue around write()/transaction(). Each call copies the cached Map and commits later, so the last commit overwrites the others. Probe: Promise.all([put a, put b]) persists only b. Two concurrent sell transactions persist stock 9 (expected 8) and 1 sale (expected 2). A repo.put issued while a transaction is open is overwritten by the tx commit. Reference: /app/frontend/src/data/db/repo.native.ts:56-69,85-90"},
+      {"component": "AsyncStorage multiSet atomicity on iOS", "issue": "The comment claims multiSet is atomic in native backends. That is true only on Android (AsyncStorageModule.java beginTransaction/setTransactionSuccessful). On iOS (RNCAsyncStorage.mm:745-751, 611-644), each value longer than 1024 chars is written to its own file in a loop. The loop continues after a per-key error and writes the manifest at the end. The native cache is also set even when a file write fails (line 636). A disk-full error or a crash mid-loop therefore leaves a partial multi-table commit. Reference: /app/frontend/src/data/db/repo.native.ts:5-6,58"},
+      {"component": "One-JSON-per-table size limits (Android)", "issue": "Android AsyncStorage (SQLite) fails getItem when a row is larger than the ~2MB CursorWindow, and the database defaults to a 6MB total. A large sales or stockMovements table would make the whole table unreadable (StorageReadError) or unwritable. Reference: /app/frontend/src/data/db/repo.native.ts:29,58"}
+    ]
+  },
+  "test_report_links": [
+    "/app/tests/t1_native_repo_probes_iter6.test.ts.txt",
+    "/app/tests/t1_native_repo_safety_probes.test.ts.txt",
+    "/app/test_reports/pytest/pytest_iter6.xml",
+    "/app/frontend/__tests__/native-safety.test.ts"
+  ],
+  "action_items": [
+    "MEDIUM (HIGH before Phase 2 wiring) repo.native.ts: serialise all writes and transactions per repo with a promise-chain mutex: `let q = Promise.resolve(); const lock = (f) => { const p = q.then(f); q = p.catch(() => {}); return p; }`. Wrap non-tx write() and transaction() in it. Read the base Map inside the lock. Document or detect calling repo.* inside a transaction fn, because that would deadlock with a lock (probe P9). Add a regression test: Promise.all of two puts or two transactions on the same table must keep both.",
+    "LOW repo.native.ts: correct the atomicity comment. Android multiSet is atomic, iOS is not. For iOS crash/partial-write safety, consider generation-suffixed keys plus a single manifest/pointer key written last (old generation kept until the pointer flips), or expo-sqlite for native in Phase 2.",
+    "LOW design: plan for the Android 2MB-per-row and 6MB total AsyncStorage limits. Chunk large tables (e.g. sales per month) or move native to expo-sqlite before real users accumulate history.",
+    "LOW migrate-legacy.ts:113: the error-record put after a parse failure is not wrapped in .catch. If storage is failing, migrateLegacy throws instead of returning {status:'failed'}. Line 172 already guards this.",
+    "LOW migrate-legacy.ts: on native, when the commit itself fails (atomic on Android, nothing written), restore() still rewrites all 16 tables. If restore also fails, rolledBack=false is reported although nothing changed. Consider skipping restore when the failure came from the migration transaction itself."
+  ],
+  "critical_code_review_comments": [
+    "readDisk treats raw === undefined (non-null, non-string) as corrupt JSON. This is safe, but the message 'rusak' can mislead (seen when a jest mock returned undefined).",
+    "readDisk does not validate that each stored row has its primary key. Rows without an id collapse under the key 'undefined'.",
+    "All Phase 1 files are small (<200 lines), use no _id, and use no hardcoded URLs. dexie, jest and jest-expo were added. The web storage comment was corrected (localStorage, not IndexedDB)."
+  ],
+  "updated_files": ["/app/tests/t1_native_repo_probes_iter6.test.ts.txt (new probe archive, outside repo source; temporary __tests__ copies deleted)"],
+  "success_rate": {"backend": "100% (15/15 regression)", "frontend": "jest 45+1 skipped / 46 with LEGACY_FILE; T1 probes 7/9 (2 failing = new concurrency finding); UI regression 100%"},
+  "seed_data_creation": "Backend regression used freshly registered TEST_ accounts only. No sales were created in the demo account, and no demo data was changed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To run probes: copy /app/tests/t1_native_repo_probes_iter6.test.ts.txt into frontend/__tests__/ as *.test.ts. It holds two files concatenated; split them at the '// ---- web/native concurrency file ----' line. Delete the copies afterwards. P8, P9 and the 'two concurrent transactions' test should pass once a write mutex is added. The jest mock's AsyncStorage methods are jest.fn: use mockRejectedValueOnce, NOT spyOn plus mockRestore, which wipes the implementation. Backend tests need EXPO_PUBLIC_BACKEND_URL. indexedDB.databases() must stay [] until Phase 2.",
+  "rca_of_issue": "Lost update: write() does `new Map(await view(t))`, then awaits commit, with no lock. Two overlapping callers copy the same base snapshot and the later multiSet overwrites the earlier one. transaction() stages copies taken at first access and commits them blindly, so it overwrites any commit that happened meanwhile. Repro: P8/P9 in the probe archive. Mitigation: per-repo serial queue."
+}

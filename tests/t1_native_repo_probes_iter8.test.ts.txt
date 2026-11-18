@@ -1,0 +1,215 @@
+/// <reference types="jest" />
+// T1 iteration-8 probes (manifest design). Each test asserts the SAFE behaviour (passes when the flaw is absent)
+import { migrateLegacy, MIGRATION_ERROR_KEY } from "@/src/data/db/migrate-legacy";
+import { createRepo, StorageReadError, type KV } from "@/src/data/db/repo.native";
+
+jest.mock("@react-native-async-storage/async-storage", () => require("@react-native-async-storage/async-storage/jest/async-storage-mock"));
+
+type K = KV & { m: Map<string, string>; sets: [string, string][][]; failSet?: (e: [string, string][]) => boolean; failRemove?: boolean };
+const kvOf = (): K => {
+  const kv: K = {
+    m: new Map(), sets: [],
+    get: async (k) => kv.m.get(k) ?? null,
+    multiSet: async (e) => { kv.sets.push(e); if (kv.failSet?.(e)) throw new Error("quota"); e.forEach(([k, v]) => kv.m.set(k, v)); },
+    remove: async (k) => { if (kv.failRemove) throw new Error("rm"); kv.m.delete(k); },
+    keys: async () => [...kv.m.keys()],
+  };
+  return kv;
+};
+const rowsOf = (kv: K, name: string, t: string) => {
+  const man = JSON.parse(kv.m.get(`usahora_v2_${name}__manifest`) ?? "{}");
+  return man[t] ? JSON.parse(kv.m.get(`usahora_v2_${name}_${t}@${man[t]}`) ?? "[]") : [];
+};
+const ids = (kv: K, name: string, t: string) => rowsOf(kv, name, t).map((r: any) => r.id).sort();
+const isManifest = (e: [string, string][]) => e[0][0].endsWith("__manifest");
+const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
+
+describe("T1 iter8 probes (manifest design)", () => {
+  it("N1 outside save fired from a timer during a tx is queued and kept", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n1", kv);
+    let outside: Promise<void> | undefined;
+    await repo.transaction(["sales"], async (tx) => {
+      await tx.put("sales", { id: "s1" });
+      outside = new Promise<void>((res, rej) => setTimeout(() => repo.put("products", { id: "other" }).then(res, rej), 0));
+      await tick(20);
+    });
+    await outside;
+    expect(ids(kv, "n1", "products")).toEqual(["other"]);
+    expect(ids(kv, "n1", "sales")).toEqual(["s1"]);
+  });
+
+  it("N2 refresh() during tx + failed manifest switch does not wipe tables", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n2", kv);
+    await repo.put("products", { id: "p1" });
+    await repo.put("sales", { id: "old" });
+    let n = 0;
+    kv.failSet = (e) => isManifest(e) && ++n === 1;
+    let r: Promise<void> | undefined;
+    await expect(repo.transaction(["products", "sales"], async (tx) => {
+      await tx.put("products", { id: "p2" });
+      await tx.put("sales", { id: "s2" });
+      r = repo.refresh();
+    })).rejects.toThrow();
+    await r;
+    expect(ids(kv, "n2", "products")).toEqual(["p1"]);
+    expect(ids(kv, "n2", "sales")).toEqual(["old"]);
+    expect(await repo.count("products")).toBe(1);
+    const re = await createRepo("n2", kv);
+    expect((await re.getAll("sales")).map((x) => x.id)).toEqual(["old"]);
+  });
+
+  it("N3 leftover OLD version (remove failed) never overwrites newer data on reopen", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n3", kv);
+    kv.failRemove = true;
+    await repo.transaction(["products", "sales"], async (tx) => { await tx.put("products", { id: "p1", name: "v1" }); await tx.put("sales", { id: "s1" }); });
+    await repo.put("products", { id: "p1", name: "v2-newer" });
+    await repo.put("sales", { id: "s2" });
+    kv.failRemove = false;
+    const leftovers = [...kv.m.keys()].filter((k) => k.includes("@")).length;
+    const reopened = await createRepo("n3", kv);
+    expect((await reopened.get("products", "p1"))?.name).toBe("v2-newer");
+    expect((await reopened.getAll("sales")).map((x) => x.id).sort()).toEqual(["s1", "s2"]);
+    console.log("N3 versioned keys before reopen:", leftovers, "after:", [...kv.m.keys()].filter((k) => k.includes("@")).length);
+    expect([...kv.m.keys()].filter((k) => k.includes("@"))).toHaveLength(2);
+  });
+
+  it("N4a tx failed on data write is never applied after restart", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n4a", kv);
+    await repo.put("products", { id: "p1", stock: 10 });
+    kv.failSet = (e) => !isManifest(e);
+    await expect(repo.transaction(["products", "sales"], async (tx) => { await tx.put("products", { id: "p1", stock: 9 }); await tx.put("sales", { id: "s1" }); })).rejects.toThrow();
+    kv.failSet = undefined;
+    const re = await createRepo("n4a", kv);
+    expect((await re.get("products", "p1"))?.stock).toBe(10);
+    expect(await re.count("sales")).toBe(0);
+  });
+
+  it("N4b tx failed on manifest switch is never applied after restart; orphans cleaned", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n4b", kv);
+    await repo.put("products", { id: "p1", stock: 10 });
+    kv.failSet = isManifest;
+    await expect(repo.transaction(["products", "sales"], async (tx) => { await tx.put("products", { id: "p1", stock: 9 }); await tx.put("sales", { id: "s1" }); })).rejects.toThrow();
+    expect((await repo.get("products", "p1"))?.stock).toBe(10); // same session
+    kv.failSet = undefined;
+    const re = await createRepo("n4b", kv);
+    expect((await re.get("products", "p1"))?.stock).toBe(10);
+    expect(await re.count("sales")).toBe(0);
+    expect([...kv.m.keys()].filter((k) => k.includes("sales@"))).toHaveLength(0);
+  });
+
+  it("N5 corrupt manifest variants give StorageReadError", async () => {
+    for (const bad of ["{rusak", "[]", "5", "\"str\""]) {
+      const kv = kvOf();
+      kv.m.set("usahora_v2_n5__manifest", bad);
+      let err: any = null;
+      await createRepo("n5", kv).catch((e) => (err = e));
+      console.log("N5 manifest", bad, "->", err?.constructor?.name ?? "opened");
+      expect(err).toBeInstanceOf(StorageReadError);
+    }
+  });
+
+  it("N5b manifest pointing at a missing table version -> StorageReadError (not empty)", async () => {
+    const kv = kvOf();
+    kv.m.set("usahora_v2_n5b__manifest", JSON.stringify({ products: "zz" }));
+    const repo = await createRepo("n5b", kv);
+    await expect(repo.getAll("products")).rejects.toBeInstanceOf(StorageReadError);
+    await expect(repo.put("products", { id: "x" })).rejects.toBeInstanceOf(StorageReadError);
+  });
+
+  it("N6 refresh() with a corrupted manifest on disk throws instead of showing empty tables", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n6", kv);
+    await repo.put("products", { id: "p1" });
+    kv.m.set("usahora_v2_n6__manifest", "[]");
+    let err: any = null;
+    await repo.refresh().catch((e) => (err = e));
+    const visible = err ? null : await repo.count("products");
+    console.log("N6 refresh with manifest '[]':", err?.constructor?.name ?? "no error", "products visible:", visible);
+    expect(err).toBeInstanceOf(StorageReadError);
+  });
+
+  it("N7 migration: commit failure -> rolledBack:true, nothing visible, no journal/restore", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n7", kv);
+    kv.failSet = (e) => e.length > 1 || isManifest(e) && e[0][1].includes("sales");
+    const res = await migrateLegacy({ repo, readLegacy: async () => JSON.stringify({ products: [{ id: "p1" }], sales: [{ id: "s1" }], meta: {} }) });
+    expect(res.status).toBe("failed");
+    expect((res as any).rolledBack).toBe(true);
+    kv.failSet = undefined;
+    const re = await createRepo("n7", kv);
+    expect(await re.count("products")).toBe(0);
+    expect([...kv.m.keys()].some((k) => k.includes("journal"))).toBe(false);
+  });
+
+  it("N8 migration: parse failure while storage failing returns {failed}", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n8", kv);
+    kv.failSet = () => true;
+    expect((await migrateLegacy({ repo, readLegacy: async () => "{rusak" })).status).toBe("failed");
+  });
+
+  it("N9 failing ops do not block the queue", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n9", kv);
+    await expect(repo.transaction(["products"], async () => { throw new Error("boom"); })).rejects.toThrow("boom");
+    kv.failSet = () => true;
+    await expect(repo.put("products", { id: "x" })).rejects.toThrow();
+    kv.failSet = undefined;
+    await repo.put("products", { id: "y" });
+    expect(ids(kv, "n9", "products")).toEqual(["y"]);
+  });
+
+  it("N10 migration failure record survives reopen; failed migration data not applied", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n10", kv);
+    kv.failSet = (e) => e.some(([k]) => k.includes("_sales@"));
+    const res = await migrateLegacy({ repo, readLegacy: async () => JSON.stringify({ products: [{ id: "p2" }], sales: [{ id: "s1" }], meta: {} }) });
+    kv.failSet = undefined;
+    const re = await createRepo("n10", kv);
+    expect(res.status).toBe("failed");
+    expect(!!(await re.get("kv", MIGRATION_ERROR_KEY))).toBe(true);
+    expect(await re.get("products", "p2")).toBeUndefined();
+  });
+
+  it("N11 no journal key is ever written (Android/iOS)", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n11", kv);
+    await repo.transaction(["products", "sales"], async (tx) => { await tx.put("products", { id: "a" }); await tx.put("sales", { id: "b" }); });
+    expect(kv.sets.flat().some(([k]) => /journal/i.test(k))).toBe(false);
+    expect(kv.sets.length).toBe(2); // data versions + manifest switch
+  });
+
+  it("N12 opening repo 'biz' must not delete data of another repo 'biz_2' (prefix collision)", async () => {
+    const kv = kvOf();
+    const other = await createRepo("biz_2", kv);
+    await other.put("products", { id: "keep" });
+    await createRepo("biz", kv); // orphan cleanup of 'biz'
+    let err: any = null;
+    const re = await createRepo("biz_2", kv).then((r) => r.getAll("products")).catch((e) => (err = e));
+    console.log("N12 biz_2 products after opening biz:", err?.message ?? re);
+    expect(err).toBeNull();
+  });
+
+  it("N13 an op that timed out waiting (reported FAILED to caller) must not be applied later", async () => {
+    const kv = kvOf();
+    const repo = await createRepo("n13", kv);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const tx = repo.transaction(["products"], async (t) => { await t.put("products", { id: "slow" }); await gate; });
+    let err: any = null;
+    await repo.put("sales", { id: "sale-retry-me" }).catch((e) => (err = e));
+    console.log("N13 waiting op result:", err?.message ?? "ok");
+    release();
+    await tx;
+    await tick(10);
+    const applied = ids(kv, "n13", "sales");
+    console.log("N13 sales on disk after caller was told it failed:", applied);
+    expect(err).not.toBeNull();
+    expect(applied).toEqual([]); // otherwise: user retries -> duplicate sale
+  }, 30000);
+});

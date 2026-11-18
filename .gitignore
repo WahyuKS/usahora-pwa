@@ -86,3 +86,11 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# USAHORA: secrets and local artefacts (added in Phase 1)
+**/.env
+*.p8
+*.p12
+*license-private*
+tools/license-sign/keys/
+__tests__/fixtures/real-*

@@ -1,0 +1,41 @@
+{
+  "summary": "Phase 1 retest #2 (native repo concurrency + iOS journal + migration fixes). The requested items PASS. Jest: LEGACY_FILE=/tmp/legacy_real_inner.json gives 52 passed; plain run gives 51 passed + 1 skipped. Iteration-6 probes, run from temporary copies (deleted afterwards), with remove() added to their KVs: P8 (concurrent puts) PASS. The two-concurrent-sales probe PASS (stock 10->8, 2 sales). P9 now fails with 'Gunakan argumen tx', as the new design intends, so it is no longer a hang. P4 now counts 2 multiSet calls (journal + commit), also by design. P5 FAILS, and this is a real finding: a migration reported as failed was rolled forward on the next open. New T1 iter-7 probes: N1-N10, 2 pass and 8 fail, all edge cases of the new queue and journal logic. Backend regression: 15/15 pass on fresh TEST_ users; no demo sales created. UI smoke: login demo, dashboard and products load, 0 page errors, indexedDB.databases()==[]. The new repo is still not wired into the app; only a comment changed in storage/index.web.ts. Deprecated packages: none detected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "repo.native queue: unrelated concurrent save", "issue": "inTx is a single repo-wide flag. ANY repo.* call made while a transaction fn is running is rejected with 'Gunakan argumen tx', even when it is not nested (e.g. a timer, a sync job or another screen). The c3 test passes only because its direct put is queued synchronously, before the tx fn starts (probe N1). Reference: repo.native.ts:89-91,129", "affected_testIDs": []},
+      {"flow": "repo.native commit failure restore", "issue": "prev values are read lazily from cache.get(t) at failure time. If refresh() (not queued) runs while a tx is open and the commit then fails, the restore writes [] to every changed table: products and sales are wiped on disk (probe N2). Reference: repo.native.ts:71,139", "affected_testIDs": []},
+      {"flow": "repo.native journal roll-forward of a FAILED tx", "issue": "If the commit fails and the restore also fails, the journal stays. On the next open it is replayed, so a tx the caller was told FAILED is applied: sale s1 appears and stock goes 10->9 (probe N4; iter-6 P5). That risks a duplicate sale if the user retried. The replay also overwrites any later successful writes to those tables. Example: the migration error record written after the failure disappears on reopen (probe N10). Migration then reports rolledBack:true although the data is applied later. Reference: repo.native.ts:65-75,81-85; migrate-legacy.ts:168", "affected_testIDs": []},
+      {"flow": "repo.native stale journal after success", "issue": "store.remove(journalKey).catch(()=>{}) after a successful commit can leave the journal behind. On the next open the old snapshot is replayed over newer data: product v2 -> v1, sale s2 lost (probe N3). Reference: repo.native.ts:76", "affected_testIDs": []},
+      {"flow": "repo.native open with leftover journal", "issue": "If the journal replay multiSet fails (quota), or the journal JSON is corrupt (raw SyntaxError, not StorageReadError), createRepo rejects on every launch with no recovery path (probes N5, N6). Reference: repo.native.ts:81-85", "affected_testIDs": []}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "repo.native journal on Android", "issue": "The journal is written on every platform. Android multiSet is already atomic (SQLite tx), so the journal there only doubles write volume. It also holds ALL changed tables in ONE value (the migration = the whole DB). That reaches the Android 2MB CursorWindow read limit sooner than any single table, and a leftover large journal would make createRepo fail on every open. Reference: repo.native.ts:60-65"}
+    ]
+  },
+  "test_report_links": ["/app/tests/t1_native_repo_probes_iter7.test.ts.txt", "/app/tests/t1_native_repo_probes_iter6.test.ts.txt", "/app/test_reports/pytest/pytest_iter7.xml", "/app/frontend/__tests__/native-safety.test.ts"],
+  "action_items": [
+    "MEDIUM repo.native.ts: replace the global inTx rejection with a tx-identity check. Option 1: the tx fn receives a scope and the repo detects only calls made from inside that fn's own context, which is hard in JS without AsyncLocalStorage. Option 2 (simpler): queue outside calls normally and only document nested use. If deadlock detection is wanted, add a timeout. Add a regression test: a repo.put fired from setTimeout while a tx awaits must succeed (probe N1).",
+    "MEDIUM repo.native.ts commit(): snapshot the previous serialized values BEFORE the multiSet (from the maps the tx read, not from cache at failure time). Also queue or block refresh() while an op is running (probe N2).",
+    "MEDIUM repo.native.ts journal semantics: the failure outcome must be consistent. Either (a) on commit failure, retry roll-forward and, if that still fails, keep the journal but report the tx as 'pending/will complete' rather than failed; or (b) if the restore fails, mark the journal as aborted so open() does NOT roll a failed tx forward. Then migrate-legacy must not report rolledBack:true while a journal is pending (probes N4, N10; iter-6 P5).",
+    "LOW repo.native.ts:76: do not swallow a journal-remove failure silently. Retry, or add a generation/sequence number to the journal so open() only replays it if it is newer than the current table data (probe N3).",
+    "LOW repo.native.ts:81-85: wrap the journal parse and replay. On a corrupt journal, throw StorageReadError (or quarantine the key). On a replay failure, surface a recoverable error instead of a permanent createRepo rejection (probes N5, N6).",
+    "LOW repo.native.ts: gate the journal to Platform.OS === 'ios' (Android multiSet is atomic). This removes the 2MB-journal risk on Android. Update the existing tests c5/c6 accordingly.",
+    "INFO: the iter-6 probes P4 (now 2 multiSet calls) and P9 (now throws) reflect the intended new design, not regressions."
+  ],
+  "critical_code_review_comments": [
+    "repo.native.ts:89-91: inTx cannot tell nested calls from concurrent ones, so it gives false positives for unrelated callers.",
+    "repo.native.ts:71: the restore uses mutable cache state. refresh() at line 139 is not serialized through the queue.",
+    "repo.native.ts:65-85: the journal is roll-forward only, but failure paths throw to the caller, so the caller's view and the disk state after restart disagree.",
+    "migrate-legacy.ts:113 now has .catch (verified N8). Line 168 skips the 16-table restore when the commit fails (verified: 0 large restore writes in N7)."
+  ],
+  "updated_files": ["/app/tests/t1_native_repo_probes_iter7.test.ts.txt (new probe file, not in __tests__; temp copies in frontend/__tests__ deleted)"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "Jest 52/52 (51+1 skip); requested features pass; T1 edge probes 2/10 pass"},
+  "seed_data_creation": "Backend tests registered fresh TEST_ users only. No demo-account sales or data created.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To run the iter-7 probes, copy /app/tests/t1_native_repo_probes_iter7.test.ts.txt to frontend/__tests__/zz_t1_iter7.test.ts, run npx jest __tests__/zz_t1_iter7, then delete the copy. Each probe asserts the SAFE behaviour. Iter-6 probe KVs need remove() added, because KV now requires remove. Backend tests need EXPO_PUBLIC_BACKEND_URL or EXPO_BACKEND_URL exported. indexedDB.databases() must stay [] until Phase 2.",
+  "rca_of_issue": "The journal is roll-forward-only, but commit() also tries a restore and throws to the caller. If the restore fails, a later open replays a tx that was reported as failed, and it overwrites anything written in between. The restore takes its prev values from the shared cache, which refresh() can empty at any time. The tx guard is one boolean, so unrelated callers are rejected."
+}

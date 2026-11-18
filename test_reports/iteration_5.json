@@ -1,0 +1,40 @@
+{
+  "summary": "USAHORA Phase 1 (repository layer and legacy migration) review and regression. Jest: `npx jest` gives 37 passed and 1 skipped. `LEGACY_FILE=/tmp/legacy_real_inner.json npx jest` gives 38 passed. The real-data migration copied every table with matching counts: products 8, stockMovements 39, customers 3, suppliers 1, sales 17, payments 17, finance 2, invoices 1, bills 1, docs 9, activities 33. Content checksums and per-product stock totals were identical, and the second run returned 'already'. tsc shows no type errors in src/data/db or __tests__. Backend regression: test_usahora_api.py 15/15 pass. Frontend regression at 390x844 works as before: demo login, dashboard KPIs, products list, POS add to cart and checkout (receipt TRX-261118-0001E0), and settings with sync 'Sinkronisasi berhasil'. indexedDB.databases() returned [] before login, after login and at the end, so the app does not create any usahora_* IndexedDB yet. Data is still in localStorage under usahora_db_<businessId> (about 53KB). Secrets are fine: git check-ignore covers backend/.env, frontend/.env, memory/test_credentials.md, *.pem and *.key, and git ls-files lists no .env or credential files. migrate-legacy.ts follows its safety rules on web (Dexie): the legacy source is only read, writes happen in one transaction, the snapshot and rollback works, re-runs are idempotent, newer records are kept, and corrupted input fails safely. repo.native.ts has 4 real safety flaws, each reproduced with probe tests (see action_items). No deprecated Expo packages were found (expo-av, expo-barcode-scanner and expo-background-fetch are absent).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "repo.native.ts read path (HIGH)", "issue": "defaultKV.get uses storage.getItem, which never throws. An AsyncStorage read error, or a stored value that fails JSON.parse, returns null. load() then caches an EMPTY table, and the next put or bulkPut saves that empty map plus the new row, which silently wipes the whole table on disk. Probe: seed rows a and b, make one read fail, put c, and the disk now holds only [c]. Reference: /app/frontend/src/data/db/repo.native.ts:11 and :24-31, /app/frontend/src/utils/storage/index.ts:33-44, storage-base.ts:19-30"},
+      {"component": "repo.native.ts transaction commit (HIGH)", "issue": "transaction() saves the staged tables one by one. If save fails on table N, tables 1 to N-1 are already persisted, so the 'all-or-nothing' contract in types.ts:38 is broken. Probe: a transaction over products and customers, where the customers write throws 'quota', still left products persisted. Reference: /app/frontend/src/data/db/repo.native.ts:61-69"},
+      {"component": "repo.native.ts non-transaction writes (MEDIUM)", "issue": "write() mutates the cached Map before save(). If save throws, the error does reach the caller, but the cache keeps the unsaved row, so later get or getAll return data that is not on disk. Probe: put('ghost') fails, then get('ghost') still returns the row. Reference: /app/frontend/src/data/db/repo.native.ts:41-45"},
+      {"component": "migrate-legacy.ts on native: rollback and verification (MEDIUM)", "issue": "If the commit fails mid-way (for example quota on 'sales'), restore() is also a multi-key, non-atomic transaction and can fail too. The result is status 'failed' with rolledBack:false, and the repo is left partly written (the legacy blob stays untouched, so no data is lost). Verification also reads from the in-memory cache, not from re-read storage, so on native it cannot catch a write that was lost or truncated on disk. Reference: /app/frontend/src/data/db/migrate-legacy.ts:76-84,134-147; repo.native.ts:24-27"}
+    ]
+  },
+  "test_report_links": ["/app/frontend/__tests__/migrate.test.ts", "/app/frontend/__tests__/repo.test.ts", "/app/frontend/__tests__/real-data.test.ts", "/app/tests/t1_native_repo_safety_probes.test.ts.txt", "/app/test_reports/pytest/pytest_iter5.xml"],
+  "action_items": [
+    "HIGH repo.native.ts: do not use storage.getItem for repo reads. Call AsyncStorage.getItem directly and let errors throw. Return null only when the key is truly missing, and throw on a JSON parse error. Never cache an empty table after a failed read.",
+    "HIGH repo.native.ts transaction: make the commit atomic. Options: write all staged tables in one AsyncStorage.multiSet call (atomic on iOS and Android SQLite storage), or write to versioned keys and then flip one pointer key (a manifest or generation number) last. On failure, leave the cache untouched.",
+    "MEDIUM repo.native.ts write(): copy the Map, apply fn to the copy, save it, and replace the cache only after the save succeeds.",
+    "MEDIUM migrate-legacy: on native, verify by re-reading storage (clear the cache or use a fresh repo instance) instead of the cache. Once commits are atomic, rollback becomes reliable.",
+    "LOW migrate-legacy: on a re-run with a changed legacy blob, meta (counters such as TRX numbering) is never updated because kv 'meta' is never replaced. If the legacy app keeps writing between runs, merge the counters (max per key) to avoid duplicate document numbers in Phase 2.",
+    "LOW migrate-legacy: newer() compares updated_at as strings. This is correct only for uniform ISO-8601 UTC strings. Numbers, or timestamps with mixed offsets, compare wrongly (e.g. '9' > '10'). Normalise with Date.parse.",
+    "LOW migrate-legacy: a parse failure overwrites an earlier 'done' marker with 'failed', so the history of the successful run is lost. Store failures under a separate key or append them.",
+    "LOW repo.native.ts defaultKV uses a dynamic import(), which Jest cannot run without --experimental-vm-modules. The real AsyncStorage path is never exercised by tests; add a test with a mocked AsyncStorage.",
+    "INFO: frontend/yarn.lock is untracked. Consider committing it (it is not a secret)."
+  ],
+  "critical_code_review_comments": [
+    "Web path (repo.web.ts with Dexie) is sound: real IndexedDB transaction, IndexedDbUnavailableError for private mode, and version history in schema.ts.",
+    "migrate-legacy.ts: the legacy blob is only read through the injected readLegacy, and nothing writes the usahora_db_* key. LEGACY_TABLES matches store.ts ENTITIES exactly, so no legacy entity is dropped.",
+    "Native keys use the prefix usahora_v2_<name>_<table> and can never collide with the legacy key usahora_db_<biz><suffix>.",
+    "Rows returned by the native get and getAll are the same object references held in the cache. A caller that mutates them changes the cache without persisting. Return clones (structuredClone) to be safe."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (15/15 regression)", "frontend": "100% regression flows; Jest 37/37 (+1 skipped), 38/38 with LEGACY_FILE"},
+  "seed_data_creation": "The POS regression created 1 real sale in the demo account: TRX-261118-0001E0, Rp85.000, synced to the cloud. Sales are immutable, so it cannot be deleted. No other data was created or changed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run `cd /app/frontend && npx jest` and `LEGACY_FILE=/tmp/legacy_real_inner.json npx jest`. The probe tests are at /app/tests/t1_native_repo_safety_probes.test.ts.txt. Copy one into frontend/__tests__/ as *.test.ts to run it; after the fixes, the 'FLAW' assertions should be inverted. The backend tests need the env var EXPO_PUBLIC_BACKEND_URL. Phase 1 is not wired into store.ts, and indexedDB.databases() must stay [] until Phase 2.",
+  "rca_of_issue": "Native data-loss RCA: the shared storage helper is designed to never throw and returns the fallback on errors. The repo uses that fallback (null) as 'table does not exist', so a failed read cannot be told apart from an empty table. The next write then persists the empty state. Reproduction is in probe 1. Mitigation: use raw AsyncStorage with errors propagated."
+}
