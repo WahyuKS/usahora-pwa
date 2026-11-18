@@ -37,7 +37,17 @@ Build USAHORA, a business management system for Indonesian UMKM (Bahasa Indonesi
 - Demo data that can be loaded and cleared.
 - Tested: iteration 1 and iteration 2 (all pass).
 
+## Iteration 2 (2026-06)
+- Barcode scan in Kasir (expo-camera) and in the product form, with camera permission handling and an Open Settings fallback.
+- WhatsApp: send invoice/quotation and payment reminders (from invoices and customer piutang); 08xx numbers converted to 62xx.
+- Cashier staff accounts:
+  - Owner creates and deactivates them.
+  - Cashier sees only Kasir, products (read-only), customers, sales history, documents (read-only), HPP and sync.
+  - The server enforces the same limits (403 / rejected sync ops / filtered pull).
+- Product photos and business logo uploaded to Emergent Object Storage. Shown in Kasir, the product list, the dashboard header, the Lainnya profile card, and on invoices/receipts.
+- Tested: iterations 3 and 4.
+
 ## Backlog
-- P1: product photos (object storage); barcode scanner (camera); staff accounts and roles.
+- P1: per-cashier shift/cash closing report; staff permissions customisable per person.
 - P1: pagination for sync pull; push pending changes when the web page closes.
 - P2: full double-entry bookkeeping and balance sheet; installable offline web app (PWA); encrypting data on the device; WhatsApp invoice share link.

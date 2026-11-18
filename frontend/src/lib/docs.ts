@@ -1,4 +1,5 @@
 import { fmtDate, fmtDateTime, rp } from "./format";
+import { fileUrl } from "./api";
 import { html as esc, tableHtml, wrapHtml } from "./export";
 import type { Business, Contact, Invoice, Sale } from "@/src/data/types";
 
@@ -6,7 +7,7 @@ const METHOD: Record<string, string> = { tunai: "Tunai", transfer: "Transfer", q
 export const methodLabel = (m: string) => METHOD[m] ?? m;
 
 const head = (b: Business | null) => `
-  <div class="row"><div><div class="brand">${esc(b?.name ?? "USAHORA")}</div>
+  <div class="row"><div>${b?.logo_file_id ? `<img src="${fileUrl(b.logo_file_id)}" style="height:48px;width:48px;object-fit:cover;border-radius:10px;margin-bottom:8px"/>` : ""}<div class="brand">${esc(b?.name ?? "USAHORA")}</div>
   <div class="muted">${esc(b?.address ?? "")}</div><div class="muted">${esc([b?.phone, b?.email].filter(Boolean).join(" · "))}</div></div>`;
 
 export function receiptHtml(sale: Sale, b: Business | null, customer: Contact | undefined, paid: number) {

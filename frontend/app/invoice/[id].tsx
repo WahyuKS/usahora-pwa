@@ -12,6 +12,7 @@ import { printHtml, sharePdf } from "@/src/lib/export";
 import { rp } from "@/src/lib/format";
 import { radius, spacing, useTheme } from "@/src/theme";
 import { statusTone } from "../invoices";
+import { invoiceMessage, openWhatsApp } from "@/src/lib/whatsapp";
 
 export default function InvoiceDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -28,6 +29,7 @@ export default function InvoiceDetail() {
     try { await fn(); } catch { toast("Gagal membuka dokumen", "error"); }
   };
   const isQ = inv.doc_type === "quotation";
+  const phone = db.customers.find((c: any) => c.id === inv.customer_id)?.phone ?? null;
   const locked = inv.status === "lunas" || inv.status === "batal";
 
   return (
@@ -56,6 +58,14 @@ export default function InvoiceDetail() {
           if (await confirm({ title: "Batalkan dokumen?", message: "Dokumen tetap tersimpan dengan status dibatalkan.", danger: true, confirmText: "Batalkan" })) run(() => setInvoiceStatus(inv.id, "batal"), "Dokumen dibatalkan");
         }} testID="invoice-cancel-button" /> : null}
       </View>
+      <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
+        <Button title="WhatsApp" icon={"message-circle" as any} style={{ flex: 1 }} testID="invoice-whatsapp-button"
+          onPress={() => safe(() => openWhatsApp(phone, invoiceMessage(inv, business, false)))} />
+        {!isQ && !locked ? <Button title="Ingatkan bayar" icon="bell" variant="secondary" style={{ flex: 1 }} testID="invoice-whatsapp-reminder"
+          onPress={() => safe(() => openWhatsApp(phone, invoiceMessage(inv, business, true)))} /> : null}
+      </View>
+      {!phone ? <T v="caption" style={{ marginTop: 4 }}>Pelanggan belum punya nomor telepon — Anda akan memilih kontak di WhatsApp.</T> : null}
+      <T v="caption" style={{ marginTop: 4 }}>Untuk melampirkan PDF, gunakan tombol PDF / Bagikan lalu pilih WhatsApp.</T>
       <T v="label" style={{ marginTop: spacing.xl, marginBottom: spacing.sm }}>Pratinjau</T>
       <View style={{ height: 560, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }} testID="invoice-preview">
         {Platform.OS === "web" ? (

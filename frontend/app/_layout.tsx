@@ -15,8 +15,11 @@ import { queryClient } from "@/src/query-client";
 
 LogBox.ignoreAllLogs(true);
 
+// Screens a cashier may not open (server also enforces these permissions).
+const OWNER_ROUTES = ["finance", "reports", "purchases", "purchase-form", "purchase", "suppliers", "invoices", "invoice-form", "invoice", "bills", "product-form"];
+
 function Gate() {
-  const { status } = useAuth();
+  const { status, isOwner } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   useEffect(() => {
@@ -24,7 +27,8 @@ function Gate() {
     const inAuth = segments[0] === "(auth)";
     if (status === "out" && !inAuth) router.replace("/login");
     if (status === "in" && inAuth) router.replace("/");
-  }, [status, segments, router]);
+    if (status === "in" && !isOwner && OWNER_ROUTES.includes(String(segments[0]))) router.replace("/pos");
+  }, [status, segments, router, isOwner]);
   if (status === "loading") return <Loading />;
   return <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }} />;
 }

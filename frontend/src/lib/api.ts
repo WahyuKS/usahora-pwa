@@ -1,3 +1,5 @@
+import { uploadForm } from "@/src/utils/upload";
+
 const BASE = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
 
 let token: string | null = null;
@@ -37,4 +39,21 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     throw new ApiError(res.status, msg);
   }
   return json as T;
+}
+
+export const fileUrl = (id: string) => `${BASE}/files/${id}?token=${encodeURIComponent(token ?? "")}`;
+
+export async function uploadImage(asset: { uri: string; fileName?: string | null; mimeType?: string | null }): Promise<string> {
+  let res: Response;
+  try {
+    res = await uploadForm(`${BASE}/upload`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      files: { file: { uri: asset.uri, name: asset.fileName ?? "foto.jpg", mimeType: asset.mimeType ?? "image/jpeg" } },
+    });
+  } catch {
+    throw new ApiError(0, "Tidak dapat mengunggah. Periksa koneksi internet.");
+  }
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, typeof json.detail === "string" ? json.detail : "Gagal mengunggah gambar");
+  return json.id as string;
 }

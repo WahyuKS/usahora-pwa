@@ -7,6 +7,8 @@ import { useAuth } from "@/src/auth";
 import { Badge, Button, Card, Divider, Field, ListRow, Screen, SectionTitle, T, useUI } from "@/src/components/ui";
 import { buildBackup, clearDemo, loadDemo, restoreBackup, validateBackup } from "@/src/data/actions";
 import { hasDemo } from "@/src/data/selectors";
+import { PhotoPicker } from "@/src/components/media";
+import { StaffSection } from "@/src/components/staff";
 import { setMeta, useDB } from "@/src/data/store";
 import { resolveConflict, syncNow, useSync } from "@/src/data/sync";
 import type { Business } from "@/src/data/types";
@@ -21,7 +23,7 @@ const STATUS_LABEL = { online: "Online", offline: "Offline — data tersimpan di
 export default function Settings() {
   const db = useDB();
   const sync = useSync();
-  const { business, updateBusiness, user } = useAuth();
+  const { business, updateBusiness, user, isOwner } = useAuth();
   const { colors } = useTheme();
   const { toast, confirm } = useUI();
   const [b, setB] = useState<Business>(business ?? ({ name: "", address: "", phone: "", email: "", currency: "IDR", invoice_footer: "", tax_enabled: false, tax_rate: 11, bank_info: "", id: "" } as Business));
@@ -113,6 +115,12 @@ export default function Settings() {
         </View>
         <T v="caption" style={{ marginTop: 4 }} testID="sync-pending-count">{db.outbox.length} perubahan menunggu · Terakhir sinkron: {db.meta.lastSyncAt ? fmtDateTime(db.meta.lastSyncAt) : "belum pernah"}</T>
         {sync.error ? <T v="caption" color={colors.error} style={{ marginTop: 4 }}>{sync.error}</T> : null}
+        {(db.meta as any).lastRejected && !sync.error ? (
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }} testID="sync-rejected-notice">
+            <T v="caption" color={colors.warningText} style={{ flex: 1 }}>{(db.meta as any).lastRejected}</T>
+            <Button size="sm" variant="ghost" title="Tutup" onPress={() => setMeta({ lastRejected: null } as any)} testID="sync-rejected-dismiss" />
+          </View>
+        ) : null}
         <Button title="Sinkronkan sekarang" icon="refresh-cw" onPress={doSync} loading={busy === "sync"} style={{ marginTop: spacing.md }} testID="sync-now-button" />
         <T v="caption" style={{ marginTop: spacing.sm }}>Semua data disimpan dulu di perangkat (bisa dipakai offline), lalu dikirim ke cloud dengan kunci unik per perubahan sehingga transaksi tidak tergandakan.</T>
       </Card>
@@ -135,8 +143,15 @@ export default function Settings() {
         </>
       ) : null}
 
+      {isOwner ? (<>
       <SectionTitle title="Profil usaha" />
       <Card>
+        <PhotoPicker fileId={b.logo_file_id} label="Logo usaha" testID="business-logo" onChange={async (id) => {
+          const next = { ...b, logo_file_id: id };
+          setB(next);
+          const r = await updateBusiness(next);
+          toast(r === "online" ? "Logo disimpan" : "Logo disimpan di perangkat, dikirim saat online", r === "online" ? "success" : "info");
+        }} />
         <Field label="Nama usaha *" value={b.name} onChangeText={set("name")} testID="business-name-input" />
         <Field label="Alamat" value={b.address} onChangeText={set("address")} multiline testID="business-address-input" />
         <View style={{ flexDirection: "row", gap: spacing.md }}>
@@ -154,6 +169,8 @@ export default function Settings() {
         {b.tax_enabled ? <Field label="Tarif pajak (%)" value={String(b.tax_rate)} onChangeText={set("tax_rate")} keyboardType="decimal-pad" testID="business-taxrate-input" /> : null}
         <Button title="Simpan profil" icon="check" onPress={saveProfile} loading={busy === "profile"} testID="business-save-button" />
       </Card>
+
+      <StaffSection />
 
       <SectionTitle title="Backup & restore" />
       <Card testID="backup-card">
@@ -179,6 +196,7 @@ export default function Settings() {
           }} />
         )}
       </Card>
+      </>) : <T v="caption" style={{ marginTop: spacing.lg }}>Profil usaha, backup, dan akun karyawan hanya dapat diatur oleh pemilik.</T>}
       <T v="caption" align="center" style={{ marginTop: spacing.xl }}>USAHORA v1.0 · Business ID {user?.business_id.slice(0, 8)}</T>
     </Screen>
   );

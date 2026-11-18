@@ -1,0 +1,55 @@
+{
+  "summary": "Iteration 3 tested staff/cashier roles, uploading photos and logos to object storage, the barcode scanner UI, WhatsApp sending, and regression of login, dashboard and POS. Backend: 21/21 pytest pass. Staff create returns 201, a duplicate email returns 409 (also for the owner email in a different case), and a cashier gets 403. GET /staff works. PATCH active=false makes both login and the existing token return 401. Cashier gets 403 on PUT /business, /backup and /backup/latest. In cashier sync push, finance and products are rejected and sales are applied. Cashier pull only returns the allowed entities. Upload of png works and the file downloads with ?token= or Bearer. With no token the download returns 401, a token from another business gets 404, and txt files and files over 5MB get 400. Cashier upload gets 403. Frontend (375x667) owner: the dashboard shows the logo and business name, and the Lainnya profile card shows the business name and the Pemilik badge. Pengaturan shows the logo PhotoPicker; uploading through the web file chooser worked. StaffSection creates a cashier and deactivates it, with a confirm dialog. On a fresh TEST account the saved logo appears in the dashboard header and the profile card. A product photo shows in the POS tile and the product list. POS search by barcode works. pos-scan-button opens the barcode-scanner modal with scanner-allow-camera, and scanner-close (44x44) closes it. The product form has product-photo and product-scan-barcode, and the scanner opens from it. The invoice WhatsApp send and reminder buttons and the customer reminder all open api.whatsapp.com/send with the phone number normalized to 62… and the right message text. Cashier: the dashboard shows the cashier view (cashier-sales-today, cashier-open-pos, cashier-recent-sales) with no owner KPIs. The Lainnya menu shows sales, customers, hpp, docs and settings. The products tab has no add button. /finance, /reports, /invoices, /purchases and /product-form all redirect to /pos. Settings hides the profile, backup, staff and demo sections. A cashier POS sale completed and synced to the server (verified via owner pull, cashier_name=Kasir Satu). One real bug: a cashier can create and edit Docs/SOP, but the server rejects the docs ops and the client drops rejected ops without telling anyone. The UI says 'Sinkronisasi berhasil, 0 perubahan menunggu' but the doc never reaches the server (verified). No deprecated Expo packages found (expo-camera and expo-image-picker are used, and there is no expo-av or expo-barcode-scanner).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/upload", "issue": "Reads the whole body into memory before checking the 5MB limit. It also trusts the client's content_type without checking magic bytes (any bytes labelled image/png are accepted)."},
+      {"endpoint": "GET /api/files/{id}, POST /api/upload", "issue": "Errors from storage init, put or get (requests.HTTPError) are not caught and come back as a generic 500. Wrap them in HTTPException(502/503) with a friendly message."},
+      {"endpoint": "GET /api/files/{id}?token=", "issue": "The long-lived (multi-day) JWT is passed in the URL query, so it leaks into proxy/access logs and cached image URLs. Consider a short-lived signed file token."},
+      {"endpoint": "/api/staff", "issue": "There is no delete endpoint, so deactivated TEST staff stay in the list. Not a functional bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Docs/SOP for cashier", "issue": "docs-add-button and the doc editor (save and delete) are available to the cashier. The server rejects 'docs' in CASHIER_PUSH, and sync.ts:66 treats rejected ops as done and removes them from the outbox. The cashier's doc stays on the device only, the UI reports a successful sync with 0 pending, and the owner never sees it (verified TEST_CashierDoc is not on the server). Either make docs read-only for the cashier (hide add/save/delete, or add 'doc' to OWNER_ROUTES), or allow docs in CASHIER_PUSH. Also show a toast or warning when ops are rejected instead of dropping them silently.", "testID": "docs-add-button / doc-save-button", "priority": "HIGH"},
+      {"component": "Customers list for cashier", "issue": "customers-add-button is shown to the cashier, but tapping it goes to /contact-form, which is in OWNER_ROUTES, so the cashier is bounced to /pos. This is confusing UX, and the server does allow cashier customer upserts. Either hide the button for cashiers or allow contact-form?entity=customers.", "testID": "customers-add-button", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard header (375 width)", "issues": ["The business name is cut off ('Toko Demo U…') because the sync pill takes the space. Allow 2 lines or shrink the pill."]},
+      {"screen": "Cashier dashboard", "issues": ["The KPI label 'Penjualan saya hari ini' is cut off ('Penjualan saya h…')."]},
+      {"screen": "Invoice detail", "issues": ["The button label is cut off ('Kirim via Wha…') at 375 width. Use a shorter label like 'WhatsApp', or stack the two buttons."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3_staff_upload.py",
+    "/app/backend/tests/check_iter3_cashier_sync.py",
+    "/app/backend/tests/cleanup_iter3.py",
+    "/app/test_reports/pytest/pytest_iteration3.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix the cashier Docs data loss. Either gate docs-add-button, doc-save-button and doc-delete-button behind isOwner (or add 'doc' to OWNER_ROUTES), or add 'docs' to CASHIER_PUSH in server.py.",
+    "In src/data/sync.ts, keep a visible record of rejected ops (toast or conflict-style list) instead of dropping them silently, and roll back the local change.",
+    "Hide customers-add-button for cashiers, or allow the cashier to reach contact-form for customers (the server already permits it).",
+    "Wrap object-storage errors in /upload and /files in HTTPException with a friendly message. Check the size before reading the whole body, or stream it.",
+    "Minor UI: text cut off in the dashboard business name, the cashier KPI label and the invoice WhatsApp button at 375px width.",
+    "Optional: when matching a scanned barcode, trim it and treat a 13-digit EAN with a leading 0 as equal to the 12-digit UPC-A (iOS reports UPC-A as EAN-13)."
+  ],
+  "critical_code_review_comments": [
+    "server.py sync_push: cashier-rejected ops come back in 'rejected', and the client (sync.ts:66) deletes them from the outbox with no feedback to the user, which causes silent data loss for any UI that lets a cashier edit entities outside CASHIER_PUSH.",
+    "_layout.tsx OWNER_ROUTES does not include 'doc'/'docs', yet the cashier cannot push docs. The client-side and server-side permission lists do not match.",
+    "media.tsx fileUrl embeds the JWT in the image URL. Re-logging in changes the URL, which also breaks the expo-image disk cache key.",
+    "No deprecated Expo packages found. The barcode scanner uses expo-camera CameraView, and camera and photo permissions are declared in app.json."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3_staff_upload.py",
+    "/app/backend/tests/check_iter3_cashier_sync.py",
+    "/app/backend/tests/cleanup_iter3.py"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "~92% (all requested flows work; cashier Docs sync data loss and cashier customer-add button misrouting found)"},
+  "seed_data_creation": "Created two TEST_ staff accounts in the demo business, both left deactivated because there is no delete endpoint: test_staff_eeebf719@example.com and test_ui_b09e41@example.com. Created one TEST_sale (pushed by the cashier, then soft-deleted by id), one cashier POS sale TRX-261118-000125 (Rp55.000, demo business, real sale record), one local-only TEST_CashierDoc on the cashier's browser storage (never synced), one fresh owner test_logo_058a5e@example.com (TEST_Toko Logo) with a logo and TEST_Produk Foto, and one TEST_OtherBiz account. A demo-business owner POS sale was NOT completed (the payment amount was left at 0). kasir@usahora.id was never deactivated and is still active.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest with -n 0 (pytest.ini forces xdist -n 2). Use EXPO_BACKEND_URL=<EXPO_PUBLIC_BACKEND_URL from frontend/.env>; the frontend/.env key is EXPO_PUBLIC_BACKEND_URL. Login is rate limited (10/min per IP, 10 per 5 min per email). The web file chooser works for PhotoPicker via page.expect_file_chooser on the '<testID>-pick' button. Checkout needs checkout-quick-0 ('Uang pas') before checkout-confirm-button. WhatsApp opens a popup to api.whatsapp.com/send."
+}

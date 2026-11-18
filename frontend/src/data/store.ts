@@ -29,7 +29,7 @@ let state: DBState = emptyDB();
 let bid: string | null = null;
 let ready = false;
 const listeners = new Set<() => void>();
-const key = (b: string) => `usahora_db_${b}`;
+const key = (b: string) => `usahora_db_${b}${keySuffix}`;
 export const inflight = new Set<string>();
 let mutateHook: () => void = () => {};
 export const setMutateHook = (fn: () => void) => {
@@ -58,8 +58,10 @@ export async function persist() {
   if (bid) await storage.setItem(key(bid), JSON.stringify(state));
 }
 
-export async function loadDB(b: string) {
+let keySuffix = "";
+export async function loadDB(b: string, suffix = "") {
   bid = b;
+  keySuffix = suffix;
   const raw = await storage.getItem(key(b), null as string | null);
   let s = emptyDB();
   if (raw) {

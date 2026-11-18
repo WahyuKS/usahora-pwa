@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { FlatList, Pressable, useWindowDimensions, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
-import { Button, Chips, EmptyState, Screen, SearchBar, SyncPill, T, useUI } from "@/src/components/ui";
+import { Button, Chips, EmptyState, IconButton, Screen, SearchBar, SyncPill, T, useUI } from "@/src/components/ui";
+import { BarcodeScanner, Thumb } from "@/src/components/media";
 import { CheckoutSheet, ReceiptSheet } from "@/src/components/pos-sheets";
 import { checkout, type CartLine } from "@/src/data/actions";
 import { paidMap, stockMap } from "@/src/data/selectors";
@@ -28,6 +29,13 @@ export default function POS() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [done, setDone] = useState<Sale | null>(null);
+  const [scan, setScan] = useState(false);
+  const onScan = (code: string) => {
+    const p = products.find((x) => (x.barcode && x.barcode === code) || (x.sku && x.sku.toLowerCase() === code.toLowerCase()));
+    if (!p) return toast(`Barcode ${code} belum terdaftar di produk`, "error");
+    add(p);
+    toast(`${p.name} ditambahkan`);
+  };
 
   const stock = useMemo(() => stockMap(db), [db]);
   const products: Product[] = useMemo(() => db.products.filter((p: Product) => !p.archived), [db]);
@@ -59,7 +67,7 @@ export default function POS() {
 
   const bottomChrome = usesNativeTabs ? insets.bottom : 0;
   return (
-    <Screen tab back={false} title="Kasir" subtitle={`${products.length} produk aktif`} scroll={false} right={<><SyncPill /></>} testID="pos-screen"
+    <Screen tab back={false} title="Kasir" subtitle={`${products.length} produk aktif`} scroll={false} right={<><IconButton icon="scan-barcode" bg={colors.brandTertiary} color={colors.brandPrimary} onPress={() => setScan(true)} testID="pos-scan-button" label="Scan barcode" /><SyncPill /></>} testID="pos-screen"
       headerExtra={
         <View style={{ marginHorizontal: -spacing.sm }}>
           <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}>
@@ -87,9 +95,7 @@ export default function POS() {
               <Pressable testID={`pos-product-${index}`} onPress={() => add(p)} disabled={out}
                 style={({ pressed }) => [{ flex: 1 / cols, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: inCart ? colors.brandPrimary : colors.border, padding: spacing.md, minHeight: 116, opacity: out ? 0.5 : 1 }, pressed && { transform: [{ scale: 0.97 }] }]}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <View style={{ width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }}>
-                    <T v="label" weight="bold" color={colors.brandPrimary}>{p.name.slice(0, 1).toUpperCase()}</T>
-                  </View>
+                  <Thumb fileId={p.photo_file_id} label={p.name} size={p.photo_file_id ? 56 : 36} />
                   {inCart ? <View style={{ minWidth: 26, height: 26, borderRadius: 13, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 }}><T v="caption" weight="bold" color={colors.onBrandPrimary}>{inCart}</T></View> : null}
                 </View>
                 <T v="label" numberOfLines={2} style={{ marginTop: spacing.sm }}>{p.name}</T>
@@ -112,6 +118,7 @@ export default function POS() {
           </View>
         </View>
       ) : null}
+      <BarcodeScanner visible={scan} onClose={() => setScan(false)} onScan={onScan} title="Scan produk ke keranjang" />
       <CheckoutSheet visible={checkoutOpen} onClose={() => setCheckoutOpen(false)} cart={cart} setCart={setCart} stock={stock} customers={db.customers} onPay={onPay} />
       <ReceiptSheet sale={done} onClose={() => setDone(null)} business={business} customer={db.customers.find((c: any) => c.id === done?.customer_id)} paid={done ? paidMap(db)[done.id] ?? 0 : 0}
         onDetail={() => { const id = done!.id; setDone(null); router.push(`/sale/${id}`); }} />

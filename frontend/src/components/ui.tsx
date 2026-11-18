@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import {
-  ActivityIndicator, Animated, Modal, Platform, Pressable, ScrollView, Text, TextInput, View,
+  ActivityIndicator, Animated, Modal, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View,
   type StyleProp, type TextStyle, type ViewStyle,
 } from "react-native";
 import { KeyboardAvoidingView, KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -180,7 +180,7 @@ export function Field({ label, help, error, money, style, testID, ...props }: Co
   return (
     <View style={{ marginBottom: spacing.lg }}>
       {label ? <T v="label" style={{ marginBottom: 6 }}>{label}</T> : null}
-      <View style={[s.inputWrap, focus && { borderColor: colors.brandPrimary }, !!error && { borderColor: colors.error }, props.multiline && { height: undefined, minHeight: 96, alignItems: "flex-start", paddingVertical: spacing.sm }]}>
+      <View style={[s.inputWrap, focus && { borderColor: colors.brandPrimary }, !!error && { borderColor: colors.error }, props.multiline && { height: "auto", minHeight: 96, alignItems: "flex-start", paddingVertical: spacing.sm }]}>
         {money ? <T v="label" color={colors.muted} style={{ marginRight: 6 }}>Rp</T> : null}
         <TextInput
           testID={testID}
@@ -191,7 +191,7 @@ export function Field({ label, help, error, money, style, testID, ...props }: Co
           onChangeText={(t) => props.onChangeText?.(money ? t.replace(/[^0-9]/g, "") : t)}
           onFocus={(e) => { setFocus(true); props.onFocus?.(e); }}
           onBlur={(e) => { setFocus(false); props.onBlur?.(e); }}
-          style={[s.input, props.multiline && { textAlignVertical: "top", minHeight: 80 }, style]}
+          style={[s.input, props.multiline ? { textAlignVertical: "top", minHeight: 80 } : { height: 46 }, style]}
         />
       </View>
       {error ? <T v="caption" color={colors.error} style={{ marginTop: 4 }}>{error}</T> : help ? <T v="caption" style={{ marginTop: 4 }}>{help}</T> : null}
@@ -205,7 +205,7 @@ export function SearchBar({ value, onChangeText, placeholder, testID }: { value:
   return (
     <View style={[s.inputWrap, { height: 44, backgroundColor: colors.surface }]}>
       <Icon name="search" size={18} color={colors.muted} />
-      <TextInput testID={testID} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.muted} style={[s.input, { marginLeft: spacing.sm }]} returnKeyType="search" />
+      <TextInput testID={testID} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.muted} style={[s.input, { marginLeft: spacing.sm, height: 42 }]} returnKeyType="search" />
       {value ? <IconButton icon="x" onPress={() => onChangeText("")} label="Hapus pencarian" /> : null}
     </View>
   );
@@ -290,18 +290,20 @@ export function SyncPill() {
   const router = useRouter();
   const { colors } = useTheme();
   const [label, icon] = SYNC_LABEL[status];
+  const { width } = useWindowDimensions();
+  const compact = width < 420;
   const tone = status === "offline" || status === "error" ? [colors.warningSoft, colors.warningText] : status === "success" ? [colors.successSoft, colors.success] : [colors.brandTertiary, colors.brandPrimary];
   return (
-    <Pressable testID="sync-status-pill" onPress={() => router.push("/settings")} style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 32, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: tone[0] }}>
+    <Pressable testID="sync-status-pill" accessibilityLabel={label} onPress={() => router.push("/settings")} style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 32, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: tone[0] }}>
       <Icon name={icon as IconName} size={14} color={tone[1]} />
-      <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: tone[1] }}>{label}</Text>
+      {compact ? null : <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: tone[1] }}>{label}</Text>}
     </Pressable>
   );
 }
 
 // ---------------- Screen ----------------
-export function Screen({ title, subtitle, back = true, right, children, footer, scroll = true, tab, testID, headerExtra }: {
-  title: string; subtitle?: string; back?: boolean; right?: ReactNode; children: ReactNode; footer?: ReactNode; scroll?: boolean; tab?: boolean; testID?: string; headerExtra?: ReactNode;
+export function Screen({ title, subtitle, back = true, right, children, footer, scroll = true, tab, testID, headerExtra, leading }: {
+  title: string; subtitle?: string; back?: boolean; right?: ReactNode; children: ReactNode; footer?: ReactNode; scroll?: boolean; tab?: boolean; testID?: string; headerExtra?: ReactNode; leading?: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -313,6 +315,7 @@ export function Screen({ title, subtitle, back = true, right, children, footer, 
       <View style={[s.header, { paddingTop: insets.top + spacing.sm }]}>
         <View style={[s.maxw, s.headerRow]}>
           {back ? <IconButton icon="arrow-left" testID="header-back-button" label="Kembali" onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} /> : null}
+          {leading}
           <View style={{ flex: 1, minWidth: 0, marginLeft: back ? 0 : spacing.xs }}>
             <T v={back ? "h3" : "h1"} numberOfLines={1} testID="screen-title">{title}</T>
             {subtitle ? <T v="caption" numberOfLines={1}>{subtitle}</T> : null}
@@ -464,7 +467,7 @@ const useStyles = makeStyles((c) => ({
     shadowColor: c.shadow, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   inputWrap: { flexDirection: "row", alignItems: "center", height: 48, borderWidth: 1, borderColor: c.border, borderRadius: radius.md, backgroundColor: c.surface, paddingHorizontal: spacing.md },
-  input: { flex: 1, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, height: "100%", ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}) },
+  input: { flex: 1, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}) },
   overlay: { flex: 1, backgroundColor: c.overlay },
   sheet: { backgroundColor: c.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, paddingTop: spacing.sm, width: "100%", maxWidth: 640, alignSelf: "center" },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: c.borderStrong, alignSelf: "center", marginBottom: spacing.sm },

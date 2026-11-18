@@ -51,6 +51,7 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<{ ok: boo
   }
   if (running) return { ok: false, message: "Sinkronisasi sedang berjalan" };
   running = true;
+  let rejectedCount = 0;
   setSS({ status: "syncing", error: null });
   try {
     if (getState().meta.businessPending && businessPush) await businessPush();
@@ -68,6 +69,7 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<{ ok: boo
         newConflicts.forEach((c) => done.add(c.op.op_id));
         setOutbox(getState().outbox.filter((o) => !done.has(o.op_id)));
         if (newConflicts.length) setMeta({ conflicts: [...getState().meta.conflicts, ...newConflicts] });
+        rejectedCount += res.rejected.length;
       } finally {
         batch.forEach((o) => inflight.delete(o.op_id));
       }
@@ -76,6 +78,12 @@ export async function syncNow(opts: { force?: boolean } = {}): Promise<{ ok: boo
     applyRemote(pull.records);
     setMeta({ lastPullAt: pull.server_time, lastSyncAt: nowISO() });
     retries = 0;
+    if (rejectedCount) {
+      const msg = `${rejectedCount} perubahan ditolak server (tidak diizinkan untuk akun ini) dan tidak disimpan di cloud.`;
+      setSS({ status: "error", error: msg });
+      setMeta({ lastRejected: msg } as any);
+      return { ok: false, message: msg };
+    }
     setSS({ status: idleStatus() });
     return { ok: true, message: "Sinkronisasi berhasil" };
   } catch (e: any) {

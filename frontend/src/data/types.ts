@@ -2,7 +2,7 @@ export type Base = { id: string; business_id?: string; created_at: string; updat
 
 export type Product = Base & {
   name: string; sku: string; barcode: string; category: string; description: string;
-  cost_price: number; sell_price: number; min_stock: number; unit: string; archived: boolean;
+  cost_price: number; sell_price: number; min_stock: number; unit: string; archived: boolean; photo_file_id?: string | null;
 };
 export type MovementType = "awal" | "masuk" | "keluar" | "penyesuaian" | "penjualan" | "pembelian";
 export type StockMovement = Base & { product_id: string; type: MovementType; qty: number; note: string; ref_id?: string };
@@ -11,7 +11,7 @@ export type SaleItem = { product_id: string; name: string; qty: number; price: n
 export type PayMethod = "tunai" | "transfer" | "qris" | "lainnya";
 export type Sale = Base & {
   number: string; customer_id: string | null; items: SaleItem[]; subtotal: number; discount: number; total: number;
-  cogs: number; method: PayMethod; received: number; change: number; note: string;
+  cogs: number; method: PayMethod; received: number; change: number; note: string; cashier_name?: string;
 };
 export type Payment = Base & { sale_id: string; amount: number; method: PayMethod };
 export type PurchaseItem = { product_id: string; name: string; qty: number; cost: number };
@@ -37,9 +37,10 @@ export type Activity = Base & { type: string; message: string };
 
 export type Business = {
   id: string; name: string; address: string; phone: string; email: string; currency: string;
-  invoice_footer: string; tax_enabled: boolean; tax_rate: number; bank_info: string;
+  invoice_footer: string; tax_enabled: boolean; tax_rate: number; bank_info: string; logo_file_id?: string | null;
 };
-export type User = { id: string; name: string; email: string; business_id: string };
+export type Role = "owner" | "cashier";
+export type User = { id: string; name: string; email: string; business_id: string; role?: Role };
 
 export type OutboxOp = {
   op_id: string; entity: string; record_id: string; action: "upsert" | "delete";

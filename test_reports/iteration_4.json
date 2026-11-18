@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 4 retest of the fixes from iteration 3. Backend: 5/5 pytest pass (test_iteration4_fixes.py). A 7MB upload returns 400 'Ukuran gambar maksimal 5 MB', and a 5MB+100B upload also returns 400. Cashier sync push: docs are rejected, customers are applied and the owner can see them, and a customer delete by the cashier is rejected. Owner and cashier login work, and the staff list shows kasir with is_active=true. Frontend at 375x667, cashier: /docs has no docs-add-button. The doc editor has no doc-save-button or doc-delete-button, the title and content inputs are not editable (typing does nothing), and only the print button is shown. customers-add-button opens /contact-form?entity=customers with no redirect. Saving TEST_KasirCust4 returns to the list, sync-now shows 'Sinkronisasi berhasil, 0 perubahan menunggu', and the owner pull confirms the record is on the server (cleaned up afterwards by id). /contact-form?entity=suppliers shows 'Hanya pemilik'. /suppliers redirects to /pos. The customer detail page has no edit button for the cashier, and opening the edit URL directly shows no contact-archive-button. Sync rejected ops: I injected a docs op into the cashier's persisted outbox (localStorage). The sync card then showed 'Sinkronisasi gagal' and '1 perubahan ditolak server ... tidak disimpan di cloud.', so the fix works. Owner: no dashboard KPI label is truncated (all labels fit on one line in 166px cards, no overflow). The invoice WhatsApp button reads 'WhatsApp' in full (167x48). A POS sale completed twice, showing the receipt sheet with TRX numbers. Settings shows the staff section with Kasir Satu Aktif and the Tambah button, and sync succeeds. No deprecated Expo packages were seen (none in scope this iteration).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/upload", "issue": "The Content-Length check runs inside the handler. FastAPI has already parsed and spooled the whole multipart body for the File(...) parameter by then, so it is not truly 'early' (it still returns 400 correctly). A non-numeric Content-Length header raises ValueError, which becomes a 500. Move the check into middleware or a dependency that runs before body parsing, and wrap int() in try/except."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Field multiline (doc editor 'Isi dokumen')", "issue": "The content TextInput is 320px tall (minHeight 320), but the bordered inputWrap stays about 96px. Long text visibly overflows outside the bordered box for both owner and cashier. RCA: s.input has height:'100%' (ui.tsx:468), which is not reset for multiline. Override with height: undefined when props.multiline (ui.tsx:194).", "testID": "doc-content-input", "priority": "medium"},
+      {"component": "Doc editor for cashier", "issue": "The category Segment (doc-category-*) can still be tapped by the cashier and visually changes the category (it is not saved). Disable it when !isOwner. Opening /doc/new as the cashier shows an empty read-only 'Dokumen' screen. Redirect it, or show EmptyState 'Hanya pemilik'.", "testID": "doc-category-*", "priority": "low"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (375px)", "issues": ["The business name in the header is truncated ('Toko Demo U...') because the 'Tersinkron' badge takes the space. Consider a smaller font or allowing 2 lines.", "The 'Estimasi laba bersih' label nearly touches the icon tile (no gap)."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration4_fixes.py", "/app/test_reports/pytest/pytest_iter4.xml"],
+  "action_items": [
+    "Fix the multiline Field overflow: in ui.tsx Field, add height: undefined to the input style when multiline, so the bordered wrapper grows with the content (doc editor, notes, address fields).",
+    "Doc editor: disable the category Segment for the cashier, and block /doc/new for non-owners.",
+    "Optional: the sync rejected-ops error is cleared on the next successful sync (it is transient). Consider persisting it in meta or showing a toast so the cashier actually notices.",
+    "Optional: move the upload Content-Length guard before body parsing, and handle a non-numeric header."
+  ],
+  "critical_code_review_comments": [
+    "sync.ts:67-85: rejected ops are still removed from the outbox and the local record stays on the device (not rolled back). The error now surfaces, but the local-only record can confuse the user.",
+    "contact-form.tsx:21: the early return happens after all hooks, so there is no rules-of-hooks violation."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration4_fixes.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% of requested fixes verified (1 new medium UI bug found)"},
+  "seed_data_creation": "TEST_CustIter4 (via API) and TEST_KasirCust4 (via UI, id c46cdd7e-24e0-417d-9418-f7a1e8decdc0) were created and then deleted by id. Two POS demo sales were created on the owner account (TRX-261118-000178, TRX-261118-00019F). A rejected TEST docs op was injected into the cashier's local outbox. The server rejected it and nothing was saved.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "EXPO_BACKEND_URL is not in frontend/.env. Use EXPO_PUBLIC_BACKEND_URL (https://usahora-pwa--0cn6f2ld.preview.emergentagent.com). The staff field is is_active. The local DB is in localStorage key usahora_db_<bid>_<uid> (JSON double-encoded); injecting outbox ops there lets you test sync errors.",
+  "rca_of_issue": "Doc content overflow: Field passes style={{minHeight:320}} to the TextInput, but s.input height:'100%' plus the wrapper height:undefined/minHeight:96 leaves the wrapper at 96px while the textarea renders at 320px, so the text overflows the border."
+}

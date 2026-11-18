@@ -4,12 +4,16 @@ import { paidMap, stockMap } from "./selectors";
 import type { Bill, Contact, FinanceEntry, Invoice, InvoiceItem, MovementType, PayMethod, Product, Purchase, PurchaseItem, Sale } from "./types";
 
 export class ValidationError extends Error {}
+let actor = "";
+export const setActor = (name: string) => {
+  actor = name;
+};
 const must = (cond: unknown, msg: string) => {
   if (!cond) throw new ValidationError(msg);
 };
 
 export function logActivity(type: string, message: string, is_demo?: boolean) {
-  upsert("activities", { type, message, ...(is_demo ? { is_demo } : {}) }, { silent: true });
+  upsert("activities", { type, message: actor ? `${message} · ${actor}` : message, ...(is_demo ? { is_demo } : {}) }, { silent: true });
 }
 
 // ---------------- Products & stock ----------------
@@ -80,7 +84,7 @@ export function checkout(input: {
   const sale = upsert("sales", {
     number: nextNumber("TRX"), customer_id: input.customer_id, items, subtotal, discount: input.discount, total,
     cogs: items.reduce((a, i) => a + i.qty * i.cost, 0), method: input.method, received: input.received,
-    change: Math.max(0, input.received - total), note: input.note, ...demo, ...at,
+    change: Math.max(0, input.received - total), note: input.note, cashier_name: actor, ...demo, ...at,
   }) as Sale;
   items.forEach((i) => addMovement(i.product_id, "penjualan", -i.qty, `Penjualan ${sale.number}`, sale.id, input.is_demo, input.created_at));
   if (paid > 0) upsert("payments", { sale_id: sale.id, amount: paid, method: input.method, ...demo, ...at }, { silent: true });

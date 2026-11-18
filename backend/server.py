@@ -12,7 +12,10 @@ from typing import Any, Literal, Optional
 import bcrypt
 import jwt
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
+import requests
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -39,12 +42,15 @@ INDEXES: dict[str, list[IndexModel]] = {
         IndexModel([("business_id", ASCENDING), ("entity", ASCENDING), ("id", ASCENDING)], name="biz_entity_id", unique=True),
         IndexModel([("business_id", ASCENDING), ("server_updated_at", ASCENDING)], name="biz_srv_updated"),
     ],
+    "files": [IndexModel([("id", ASCENDING)], name="id", unique=True), IndexModel([("business_id", ASCENDING)], name="biz")],
     "sync_ops": [IndexModel([("business_id", ASCENDING), ("op_id", ASCENDING)], name="biz_op", unique=True)],
     "backups": [IndexModel([("business_id", ASCENDING), ("created_at", ASCENDING)], name="biz_created")],
 }
 
 # Immutable financial / stock records: never overwritten once stored.
 IMMUTABLE = {"sales", "stockMovements", "payments"}
+CASHIER_PUSH = {"sales", "payments", "stockMovements", "customers", "activities"}
+CASHIER_PULL = {"products", "customers", "sales", "payments", "stockMovements", "docs"}
 ENTITIES = {
     "products", "stockMovements", "customers", "suppliers", "sales", "payments", "purchases",
     "finance", "invoices", "bills", "docs", "activities",
@@ -116,6 +122,13 @@ class BusinessIn(BaseModel):
     tax_enabled: bool = False
     tax_rate: float = Field(11, ge=0, le=100)
     bank_info: str = Field("", max_length=300)
+    logo_file_id: Optional[str] = Field(None, max_length=64)
+
+
+class StaffIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
 
 
 class SyncOp(BaseModel):
@@ -147,22 +160,36 @@ def make_token(user: dict) -> str:
     return jwt.encode({"sub": user["id"], "iat": now, "exp": now + timedelta(days=JWT_DAYS)}, JWT_SECRET, algorithm=JWT_ALG)
 
 
-async def current_user(cred: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> dict:
+async def user_from_token(token: Optional[str]) -> dict:
     err = HTTPException(401, "Sesi tidak valid. Silakan masuk kembali.")
-    if not cred:
+    if not token:
         raise err
     try:
-        payload = jwt.decode(cred.credentials, JWT_SECRET, algorithms=[JWT_ALG])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
     except jwt.InvalidTokenError:
         raise err
-    user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+    user = await db.users.find_one({"id": payload.get("sub"), "is_active": {"$ne": False}}, {"_id": 0})
     if not user:
         raise err
     return user
 
 
+async def current_user(cred: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> dict:
+    return await user_from_token(cred.credentials if cred else None)
+
+
+def role_of(u: dict) -> str:
+    return u.get("role", "owner")
+
+
+async def owner_user(user: dict = Depends(current_user)) -> dict:
+    if role_of(user) != "owner":
+        raise HTTPException(403, "Hanya pemilik usaha yang dapat melakukan ini")
+    return user
+
+
 def public_user(u: dict) -> dict:
-    return {"id": u["id"], "name": u["name"], "email": u["email"], "business_id": u["business_id"]}
+    return {"id": u["id"], "name": u["name"], "email": u["email"], "business_id": u["business_id"], "role": role_of(u)}
 
 
 async def get_business(bid: str) -> dict:
@@ -176,7 +203,7 @@ async def register(body: RegisterIn, request: Request):
     email = str(body.email).lower().strip()
     bid = str(uuid.uuid4())
     user = {"id": str(uuid.uuid4()), "name": body.name.strip(), "email": email, "password_hash": hash_pw(body.password),
-            "business_id": bid, "created_at": now_iso()}
+            "business_id": bid, "role": "owner", "is_active": True, "created_at": now_iso()}
     try:
         await db.users.insert_one(dict(user))
     except DuplicateKeyError:
@@ -192,7 +219,7 @@ async def register(body: RegisterIn, request: Request):
 async def login(body: LoginIn, request: Request):
     rate_limit(request, "login")
     rate_limit(request, f"login-email:{str(body.email).lower()}", limit=10, window=300)
-    user = await db.users.find_one({"email": str(body.email).lower().strip()}, {"_id": 0})
+    user = await db.users.find_one({"email": str(body.email).lower().strip(), "is_active": {"$ne": False}}, {"_id": 0})
     if not user or not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
         raise HTTPException(401, "Email atau kata sandi salah")
     return {"access_token": make_token(user), "user": public_user(user), "business": await get_business(user["business_id"])}
@@ -204,7 +231,7 @@ async def me(user: dict = Depends(current_user)):
 
 
 @api.put("/business")
-async def update_business(body: BusinessIn, user: dict = Depends(current_user)):
+async def update_business(body: BusinessIn, user: dict = Depends(owner_user)):
     data = {**body.model_dump(), "updated_at": now_iso()}
     await db.businesses.update_one({"id": user["business_id"]}, {"$set": data})
     return await get_business(user["business_id"])
@@ -215,7 +242,11 @@ async def update_business(body: BusinessIn, user: dict = Depends(current_user)):
 async def sync_push(body: SyncPushIn, user: dict = Depends(current_user)):
     bid = user["business_id"]
     applied, duplicates, conflicts, rejected = [], [], [], []
+    cashier = role_of(user) == "cashier"
     for op in body.ops:
+        if cashier and (op.entity not in CASHIER_PUSH or (op.entity == "customers" and op.action == "delete")):
+            rejected.append({"op_id": op.op_id, "reason": "Tidak diizinkan untuk kasir"})
+            continue
         if op.entity not in ENTITIES:
             rejected.append({"op_id": op.op_id, "reason": "Entitas tidak dikenal"})
             continue
@@ -255,6 +286,8 @@ async def sync_pull(since: Optional[str] = None, user: dict = Depends(current_us
     q: dict[str, Any] = {"business_id": user["business_id"]}
     if since:
         q["server_updated_at"] = {"$gt": since}
+    if role_of(user) == "cashier":
+        q["entity"] = {"$in": sorted(CASHIER_PULL)}
     docs = await db.records.find(q, {"_id": 0}).sort("server_updated_at", 1).to_list(20000)
     return {"records": [{"entity": d["entity"], "id": d["id"], "deleted": d.get("deleted", False), "data": d.get("data")} for d in docs],
             "server_time": now_iso()}
@@ -268,7 +301,7 @@ async def sync_status(user: dict = Depends(current_user)):
 
 # ---------------- Cloud backup ----------------
 @api.post("/backup")
-async def create_backup(body: BackupIn, user: dict = Depends(current_user)):
+async def create_backup(body: BackupIn, user: dict = Depends(owner_user)):
     if body.data.get("app") != "usahora":
         raise HTTPException(400, "Format backup tidak valid")
     doc = {"id": str(uuid.uuid4()), "business_id": user["business_id"], "created_at": now_iso(), "data": body.data}
@@ -277,11 +310,109 @@ async def create_backup(body: BackupIn, user: dict = Depends(current_user)):
 
 
 @api.get("/backup/latest")
-async def latest_backup(user: dict = Depends(current_user)):
+async def latest_backup(user: dict = Depends(owner_user)):
     doc = await db.backups.find_one({"business_id": user["business_id"]}, {"_id": 0}, sort=[("created_at", -1)])
     if not doc:
         raise HTTPException(404, "Belum ada backup cloud")
     return doc
+
+
+# ---------------- Staff (owner only) ----------------
+@api.post("/staff", status_code=201)
+async def create_staff(body: StaffIn, owner: dict = Depends(owner_user)):
+    staff = {"id": str(uuid.uuid4()), "name": body.name.strip(), "email": str(body.email).lower().strip(),
+             "password_hash": hash_pw(body.password), "business_id": owner["business_id"], "role": "cashier",
+             "is_active": True, "created_by": owner["id"], "created_at": now_iso()}
+    try:
+        await db.users.insert_one(dict(staff))
+    except DuplicateKeyError:
+        raise HTTPException(409, "Email sudah terdaftar")
+    return public_user(staff)
+
+
+@api.get("/staff")
+async def list_staff(owner: dict = Depends(owner_user)):
+    docs = await db.users.find({"business_id": owner["business_id"], "role": "cashier"}, {"_id": 0, "password_hash": 0}).to_list(200)
+    return [{**public_user(d), "is_active": d.get("is_active", True)} for d in docs]
+
+
+@api.patch("/staff/{staff_id}")
+async def set_staff_active(staff_id: str, active: bool, owner: dict = Depends(owner_user)):
+    r = await db.users.update_one({"id": staff_id, "business_id": owner["business_id"], "role": "cashier"}, {"$set": {"is_active": active}})
+    if r.matched_count != 1:
+        raise HTTPException(404, "Karyawan tidak ditemukan")
+    return {"ok": True}
+
+
+# ---------------- Files (Emergent Object Storage) ----------------
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "usahora"
+storage_key: Optional[str] = None
+ALLOWED_IMG = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+
+
+def init_storage() -> str:
+    global storage_key
+    if storage_key:
+        return storage_key
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    resp.raise_for_status()
+    storage_key = resp.json()["storage_key"]
+    return storage_key
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    global storage_key
+    for attempt in range(2):
+        key = init_storage()
+        resp = requests.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key, "Content-Type": content_type}, data=data, timeout=120)
+        if resp.status_code == 503 and attempt == 0:
+            storage_key = None
+            continue
+        if resp.status_code == 402:
+            raise HTTPException(402, "Kuota penyimpanan habis. Coba lagi nanti.")
+        resp.raise_for_status()
+        return resp.json()
+    raise HTTPException(503, "Penyimpanan sedang tidak tersedia")
+
+
+def get_object(path: str) -> tuple[bytes, str]:
+    key = init_storage()
+    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+@api.post("/upload")
+async def upload_file(request: Request, file: UploadFile = File(...), user: dict = Depends(owner_user)):
+    cl = request.headers.get("content-length") or "0"
+    if cl.isdigit() and int(cl) > 6 * 1024 * 1024:
+        raise HTTPException(400, "Ukuran gambar maksimal 5 MB")
+    ctype = (file.content_type or "").lower()
+    if ctype not in ALLOWED_IMG:
+        raise HTTPException(400, "Format gambar harus JPG, PNG, atau WEBP")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Ukuran gambar maksimal 5 MB")
+    fid = str(uuid.uuid4())
+    path = f"{APP_NAME}/uploads/{user['business_id']}/{fid}.{ALLOWED_IMG[ctype]}"
+    result = await run_in_threadpool(put_object, path, data, ctype)
+    await db.files.insert_one({"id": fid, "business_id": user["business_id"], "owner_id": user["id"], "path": result["path"],
+                               "content_type": ctype, "size": len(data), "original_name": file.filename, "is_deleted": False, "created_at": now_iso()})
+    return {"id": fid}
+
+
+@api.get("/files/{file_id}")
+async def download_file(file_id: str, request: Request, token: Optional[str] = None):
+    auth = request.headers.get("authorization", "")
+    user = await user_from_token(auth[7:] if auth.lower().startswith("bearer ") else token)
+    rec = await db.files.find_one({"id": file_id, "business_id": user["business_id"], "is_deleted": False}, {"_id": 0})
+    if not rec:
+        raise HTTPException(404, "File tidak ditemukan")
+    data, ctype = await run_in_threadpool(get_object, rec["path"])
+    return Response(content=data, media_type=rec.get("content_type", ctype), headers={"Cache-Control": "private, max-age=86400"})
 
 
 app.include_router(api)
@@ -291,6 +422,10 @@ app.add_middleware(CORSMiddleware, allow_credentials=False, allow_origins=["*"],
 @app.on_event("startup")
 async def start_index_build():
     app.state.index_task = asyncio.create_task(ensure_indexes())
+    try:
+        await run_in_threadpool(init_storage)
+    except Exception as exc:
+        logger.error("storage init failed: %s", exc)
 
 
 @app.on_event("shutdown")

@@ -2,6 +2,8 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 
+import { useAuth } from "@/src/auth";
+import { Thumb } from "@/src/components/media";
 import { Badge, Card, Chips, Divider, EmptyState, IconButton, ListRow, Screen, SearchBar, T } from "@/src/components/ui";
 import { inventoryValue, stockMap } from "@/src/data/selectors";
 import { useDB } from "@/src/data/store";
@@ -15,6 +17,7 @@ export default function Products() {
   const db = useDB();
   const router = useRouter();
   const { colors } = useTheme();
+  const { isOwner } = useAuth();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("active");
   const stock = useMemo(() => stockMap(db), [db]);
@@ -28,7 +31,7 @@ export default function Products() {
 
   return (
     <Screen tab back={false} title="Produk & Stok" subtitle={`Nilai persediaan ${rp(value)}`} testID="products-screen"
-      right={<IconButton icon="plus" bg={colors.brandPrimary} color={colors.onBrandPrimary} onPress={() => router.push("/product-form")} testID="products-add-button" label="Tambah produk" />}
+      right={isOwner && <IconButton icon="plus" bg={colors.brandPrimary} color={colors.onBrandPrimary} onPress={() => router.push("/product-form")} testID="products-add-button" label="Tambah produk" />}
       headerExtra={
         <View style={{ marginHorizontal: -spacing.sm }}>
           <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}>
@@ -49,9 +52,9 @@ export default function Products() {
             return (
               <View key={p.id}>
                 {i ? <Divider /> : null}
-                <ListRow testID={`product-row-${i}`} icon="package" tone={st <= p.min_stock ? "warning" : "brand"} title={p.name} subtitle={`${p.category || "Umum"}${p.sku ? ` · ${p.sku}` : ""} · ${rp(p.sell_price)}`}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}><Thumb fileId={p.photo_file_id} label={p.name} size={44} /><View style={{ flex: 1 }}><ListRow testID={`product-row-${i}`} title={p.name} subtitle={`${p.category || "Umum"}${p.sku ? ` · ${p.sku}` : ""} · ${rp(p.sell_price)}`}
                   onPress={() => router.push(`/product/${p.id}`)}
-                  rightSub={<View style={{ alignItems: "flex-end", gap: 4 }}><T v="label" weight="semibold">{`${st} ${p.unit}`}</T>{st <= 0 ? <Badge label="Habis" tone="error" /> : st <= p.min_stock ? <Badge label="Menipis" tone="warning" /> : null}</View>} />
+                  rightSub={<View style={{ alignItems: "flex-end", gap: 4 }}><T v="label" weight="semibold">{`${st} ${p.unit}`}</T>{st <= 0 ? <Badge label="Habis" tone="error" /> : st <= p.min_stock ? <Badge label="Menipis" tone="warning" /> : null}</View>} /></View></View>
               </View>
             );
           })}

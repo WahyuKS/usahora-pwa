@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import { useWindowDimensions, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
-import { Badge, Button, Card, Chips, Divider, EmptyState, Icon, IconTile, ListRow, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
+import { Thumb } from "@/src/components/media";
+import { Badge, Button, Card, Chips, Divider, EmptyState, Icon, IconTile, ListRow, Logo, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
 import { loadDemo, payBill } from "@/src/data/actions";
 import { billsDue, hasDemo, lowStock, payables, receivables, salesSeries, summary, topProducts } from "@/src/data/selectors";
 import { setMeta, useDB } from "@/src/data/store";
@@ -14,7 +15,7 @@ function Kpi({ label, value, icon, tone, sub, testID, width }: { label: string; 
   return (
     <Card style={{ width, padding: spacing.md }} testID={testID}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <T v="caption" numberOfLines={1} style={{ flex: 1 }}>{label}</T>
+        <T v="caption" numberOfLines={2} style={{ flex: 1 }}>{label}</T>
         <IconTile name={icon} tone={tone} size={28} />
       </View>
       <T v="h3" weight="bold" numberOfLines={1} style={{ marginTop: spacing.sm }} testID={`${testID}-value`}>{value}</T>
@@ -47,7 +48,7 @@ function BarChart({ data, labelFor }: { data: { key: string; value: number }[]; 
 
 export default function Dashboard() {
   const db = useDB();
-  const { business } = useAuth();
+  const { business, user, isOwner } = useAuth();
   const router = useRouter();
   const { colors } = useTheme();
   const { toast } = useUI();
@@ -64,9 +65,29 @@ export default function Dashboard() {
     };
   }, [db, period]);
   const isEmpty = db.products.length === 0 && db.sales.length === 0;
+  const logo = <View style={{ marginRight: spacing.sm }} testID="dashboard-business-logo">{business?.logo_file_id ? <Thumb fileId={business.logo_file_id} size={40} /> : <Logo size={40} />}</View>;
+
+  if (!isOwner) {
+    const mine = data.today.sales.filter((s: any) => s.cashier_name === user?.name);
+    return (
+      <Screen tab back={false} leading={logo} title={business?.name ?? "USAHORA"} subtitle={`Halo, ${user?.name ?? ""} · Kasir`} right={<SyncPill />} testID="dashboard-screen">
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <Kpi width="48.5%" testID="cashier-sales-today" label="Penjualan saya hari ini" value={rp(mine.reduce((a: number, s: any) => a + s.total, 0))} icon="trending-up" sub={`${mine.length} transaksi`} />
+          <Kpi width="48.5%" testID="kpi-low-stock" label="Stok menipis" value={`${data.low.length} produk`} icon="triangle-alert" tone={data.low.length ? "warning" : "success"} />
+        </View>
+        <Button title="Buka kasir" icon="shopping-cart" size="lg" style={{ marginTop: spacing.lg }} onPress={() => router.push("/pos")} testID="cashier-open-pos" />
+        <SectionTitle title="Transaksi terakhir saya" />
+        <Card testID="cashier-recent-sales">
+          {mine.length === 0 ? <T v="caption">Belum ada transaksi hari ini.</T> : mine.slice(0, 8).map((s: any, i: number) => (
+            <View key={s.id}>{i ? <Divider /> : null}<ListRow title={s.number} subtitle={fmtDateTime(s.created_at)} right={rp(s.total)} onPress={() => router.push(`/sale/${s.id}`)} /></View>
+          ))}
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
-    <Screen tab back={false} title={business?.name ?? "USAHORA"} subtitle={`Ringkasan usaha · ${fmtDate(new Date())}`} right={<SyncPill />} testID="dashboard-screen"
+    <Screen tab back={false} leading={logo} title={business?.name ?? "USAHORA"} subtitle={`Ringkasan usaha · ${fmtDate(new Date())}`} right={<SyncPill />} testID="dashboard-screen"
       headerExtra={<Chips options={PERIODS.slice(0, 4)} value={period} onChange={setPeriod} testIDPrefix="dashboard-period" style={{ marginHorizontal: -spacing.sm }} />}>
       {isEmpty ? (
         <Card testID="onboarding-card">

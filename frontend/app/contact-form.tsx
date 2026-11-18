@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 
-import { Button, Field, Screen, useRun, useUI } from "@/src/components/ui";
+import { useAuth } from "@/src/auth";
+import { Button, EmptyState, Field, Screen, useRun, useUI } from "@/src/components/ui";
 import { saveContact } from "@/src/data/actions";
 import { getState, upsert } from "@/src/data/store";
 import type { Contact } from "@/src/data/types";
@@ -16,6 +17,8 @@ export default function ContactForm() {
   const [f, setF] = useState({ name: existing?.name ?? "", phone: existing?.phone ?? "", email: existing?.email ?? "", address: existing?.address ?? "", notes: existing?.notes ?? "" });
   const set = (k: keyof typeof f) => (v: string) => setF((p) => ({ ...p, [k]: v }));
   const label = entity === "customers" ? "pelanggan" : "supplier";
+  const { isOwner } = useAuth();
+  if (!isOwner && entity !== "customers") return <Screen title="Tidak diizinkan"><EmptyState icon="lock" title="Hanya pemilik" message="Data supplier hanya dapat diubah oleh pemilik usaha." /></Screen>;
 
   const submit = () => {
     if (run(() => saveContact(entity, { ...f, id: existing?.id }), existing ? "Data diperbarui" : `${label[0].toUpperCase() + label.slice(1)} ditambahkan`)) router.back();
@@ -28,7 +31,7 @@ export default function ContactForm() {
       <Field label="Email" value={f.email} onChangeText={set("email")} keyboardType="email-address" autoCapitalize="none" placeholder="Opsional" testID="contact-email-input" />
       <Field label="Alamat" value={f.address} onChangeText={set("address")} multiline placeholder="Opsional" testID="contact-address-input" />
       <Field label="Catatan" value={f.notes} onChangeText={set("notes")} multiline placeholder="Opsional" testID="contact-notes-input" />
-      {existing ? (
+      {existing && isOwner ? (
         <Button title={`Arsipkan ${label}`} variant="ghost" icon="archive" style={{ marginTop: spacing.sm }} testID="contact-archive-button" onPress={async () => {
           if (!(await confirm({ title: `Arsipkan ${label}?`, message: "Data disembunyikan dari daftar. Riwayat transaksi tetap tersimpan.", confirmText: "Arsipkan", danger: true }))) return;
           upsert(entity, { id: existing.id, archived: true });

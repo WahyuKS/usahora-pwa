@@ -9,14 +9,21 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.usahorapwa.qvqya3"
+      "bundleIdentifier": "com.emergent.usahorapwa.qvqya3",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan barcode produk untuk kasir lebih cepat",
+        "NSPhotoLibraryUsageDescription": "Pilih foto produk dan logo usaha"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#2563EB"
       },
-      "package": "com.emergent.usahorapwa.qvqya3"
+      "package": "com.emergent.usahorapwa.qvqya3",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -45,7 +52,20 @@
       "expo-web-browser",
       "expo-status-bar",
       "@react-native-vector-icons/lucide",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan barcode produk untuk kasir lebih cepat",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pilih foto produk dan logo usaha"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

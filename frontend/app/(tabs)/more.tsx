@@ -2,17 +2,19 @@ import { useRouter, type Href } from "expo-router";
 import { View } from "react-native";
 
 import { useAuth } from "@/src/auth";
+import { Thumb } from "@/src/components/media";
 import { Badge, Card, Divider, ListRow, Screen, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
 import { billsDue } from "@/src/data/selectors";
 import { useDB } from "@/src/data/store";
 import { spacing } from "@/src/theme";
 
+const CASHIER_MENU = ["/sales", "/customers", "/docs", "/hpp", "/settings"];
 type Item = { title: string; sub: string; icon: IconName; href: Href; badge?: number };
 
 export default function More() {
   const db = useDB();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, business, isOwner } = useAuth();
   const { confirm } = useUI();
   const due = billsDue(db).length;
   const groups: { title: string; items: Item[] }[] = [
@@ -45,7 +47,15 @@ export default function More() {
   ];
   return (
     <Screen tab back={false} title="Lainnya" subtitle={user?.email} right={<SyncPill />} testID="more-screen">
-      {groups.map((g) => (
+      <Card style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.lg }} testID="profile-card" onPress={isOwner ? () => router.push("/settings") : undefined}>
+        {business?.logo_file_id ? <Thumb fileId={business.logo_file_id} size={56} /> : <Thumb label={business?.name ?? "U"} size={56} />}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <T v="h3" numberOfLines={1} testID="profile-business-name">{business?.name ?? "USAHORA"}</T>
+          <T v="caption" numberOfLines={1}>{user?.name} · {isOwner ? "Pemilik" : "Kasir"}</T>
+        </View>
+        <Badge label={isOwner ? "Pemilik" : "Kasir"} tone={isOwner ? "brand" : "neutral"} testID="profile-role-badge" />
+      </Card>
+      {groups.map((g) => ({ ...g, items: isOwner ? g.items : g.items.filter((it) => CASHIER_MENU.includes(String(it.href))) })).filter((g) => g.items.length).map((g) => (
         <View key={g.title} style={{ marginBottom: spacing.lg }}>
           <T v="caption" weight="semibold" style={{ marginBottom: spacing.sm, textTransform: "uppercase", letterSpacing: 0.6 }}>{g.title}</T>
           <Card style={{ paddingVertical: spacing.xs }}>

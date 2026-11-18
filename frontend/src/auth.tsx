@@ -5,6 +5,7 @@ import { storage } from "@/src/utils/storage";
 import { getState, loadDB, setMeta, unloadDB } from "@/src/data/store";
 import { setBusinessPusher, startSyncEngine, syncNow } from "@/src/data/sync";
 import type { Business, User } from "@/src/data/types";
+import { setActor } from "@/src/data/actions";
 
 const TOKEN_KEY = "usahora_token";
 const SESSION_KEY = "usahora_session";
@@ -17,6 +18,7 @@ type AuthState = {
   register: (p: { name: string; business_name: string; email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateBusiness: (b: Business) => Promise<"online" | "local">;
+  isOwner: boolean;
 };
 
 const Ctx = createContext<AuthState | null>(null);
@@ -31,7 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const enter = useCallback(async (token: string, u: User, b: Business) => {
     setApiToken(token);
-    await loadDB(u.business_id);
+    await loadDB(u.business_id, u.role === "cashier" ? `_${u.id}` : "");
+    setActor(u.name);
     setUser(u);
     setBusiness(b);
     setStatus("in");
@@ -67,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const me = await api<{ user: User; business: Business }>("/auth/me");
         if (!getState().meta.businessPending) {
           setBusiness(me.business);
+          setUser(me.user);
           saveSession(me.user, me.business);
         }
       } catch (e) {
@@ -102,5 +106,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  return <Ctx.Provider value={{ status, user, business, login, register, logout, updateBusiness }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ status, user, business, login, register, logout, updateBusiness, isOwner: (user?.role ?? "owner") === "owner" }}>{children}</Ctx.Provider>;
 }

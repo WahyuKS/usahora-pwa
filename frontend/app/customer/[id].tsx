@@ -7,6 +7,8 @@ import { paidMap } from "@/src/data/selectors";
 import { useDB } from "@/src/data/store";
 import type { Contact, Invoice, Sale } from "@/src/data/types";
 import { fmtDate, fmtDateTime, rp } from "@/src/lib/format";
+import { useAuth } from "@/src/auth";
+import { debtReminder, openWhatsApp } from "@/src/lib/whatsapp";
 import { spacing, useTheme } from "@/src/theme";
 
 export default function CustomerDetail() {
@@ -14,6 +16,7 @@ export default function CustomerDetail() {
   const db = useDB();
   const router = useRouter();
   const { colors } = useTheme();
+  const { business, isOwner } = useAuth();
   const c: Contact | undefined = db.customers.find((x: Contact) => x.id === id);
   const data = useMemo(() => {
     const paid = paidMap(db);
@@ -27,11 +30,12 @@ export default function CustomerDetail() {
 
   return (
     <Screen title={c.name} subtitle={c.phone || c.email} testID="customer-detail-screen"
-      right={<IconButton icon="pencil" onPress={() => router.push({ pathname: "/contact-form", params: { entity: "customers", id: c.id } })} testID="customer-edit-button" label="Edit" />}>
+      right={isOwner && <IconButton icon="pencil" onPress={() => router.push({ pathname: "/contact-form", params: { entity: "customers", id: c.id } })} testID="customer-edit-button" label="Edit" />}>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Card style={{ flex: 1 }}><T v="caption">Total pembelian</T><T v="h3" testID="customer-total">{rp(data.total)}</T></Card>
         <Card style={{ flex: 1 }}><T v="caption">Piutang</T><T v="h3" color={data.due ? colors.warningText : colors.success} testID="customer-due">{rp(data.due)}</T></Card>
       </View>
+      {c.phone && data.due > 0 ? <Button title="Ingatkan piutang via WhatsApp" icon={"message-circle" as any} style={{ marginTop: spacing.md }} onPress={() => openWhatsApp(c.phone, debtReminder(c.name, data.due, business)).catch(() => {})} testID="customer-whatsapp-reminder" /> : null}
       {c.phone ? <Button title="Hubungi via telepon" icon="phone" variant="outline" style={{ marginTop: spacing.md }} onPress={() => Linking.openURL(`tel:${c.phone}`)} testID="customer-call-button" /> : null}
       {c.address || c.notes || c.email ? (
         <Card style={{ marginTop: spacing.md }}>

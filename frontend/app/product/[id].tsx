@@ -2,6 +2,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 
+import { useAuth } from "@/src/auth";
+import { Thumb } from "@/src/components/media";
 import { Badge, Button, Card, Divider, EmptyState, Field, IconButton, ListRow, Screen, SectionTitle, Segment, Sheet, T, useRun, useUI } from "@/src/components/ui";
 import { adjustStock, archiveProduct, stockInOut } from "@/src/data/actions";
 import { stockMap } from "@/src/data/selectors";
@@ -20,6 +22,7 @@ export default function ProductDetail() {
   const { colors } = useTheme();
   const { confirm } = useUI();
   const run = useRun();
+  const { isOwner } = useAuth();
   const [mode, setMode] = useState<Mode | null>(null);
   const [qty, setQty] = useState("");
   const [note, setNote] = useState("");
@@ -41,17 +44,18 @@ export default function ProductDetail() {
 
   return (
     <Screen title={p.name} subtitle={p.category} testID="product-detail-screen"
-      right={<IconButton icon="pencil" onPress={() => router.push({ pathname: "/product-form", params: { id: p.id } })} testID="product-edit-button" label="Edit" />}>
+      right={isOwner && <IconButton icon="pencil" onPress={() => router.push({ pathname: "/product-form", params: { id: p.id } })} testID="product-edit-button" label="Edit" />}>
       {p.archived ? <View style={{ marginBottom: spacing.md }}><Badge label="Diarsipkan — tidak tampil di kasir" tone="neutral" /></View> : null}
+      {p.photo_file_id ? <View style={{ marginBottom: spacing.md }}><Thumb fileId={p.photo_file_id} size={120} /></View> : null}
       <Card>
         <T v="caption">Stok saat ini</T>
         <T v="display" testID="product-stock-value" color={stock <= p.min_stock ? colors.warningText : colors.onSurface}>{stock} <T v="h3" color={colors.muted}>{p.unit}</T></T>
         <T v="caption">Minimum {p.min_stock} {p.unit} · Nilai {rp(Math.max(0, stock) * p.cost_price)}</T>
-        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg }}>
+        {isOwner ? <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg }}>
           <Button title="Masuk" variant="secondary" style={{ flex: 1 }} onPress={() => setMode("masuk")} testID="stock-in-button" />
           <Button title="Keluar" variant="secondary" style={{ flex: 1 }} onPress={() => setMode("keluar")} testID="stock-out-button" />
           <Button title="Opname" variant="secondary" style={{ flex: 1 }} onPress={() => setMode("penyesuaian")} testID="stock-adjust-button" />
-        </View>
+        </View> : null}
       </Card>
       <Card style={{ marginTop: spacing.md }}>
         <ListRow title="Harga jual" right={rp(p.sell_price)} />
@@ -75,11 +79,11 @@ export default function ProductDetail() {
         ))}
       </Card>
 
-      <Button title={p.archived ? "Aktifkan kembali" : "Arsipkan produk"} variant="ghost" icon="archive" style={{ marginTop: spacing.xl }} testID="product-archive-button"
+      {isOwner && <Button title={p.archived ? "Aktifkan kembali" : "Arsipkan produk"} variant="ghost" icon="archive" style={{ marginTop: spacing.xl }} testID="product-archive-button"
         onPress={async () => {
           if (!p.archived && !(await confirm({ title: "Arsipkan produk?", message: "Produk tidak akan tampil di kasir. Riwayat transaksi dan stok tetap tersimpan.", confirmText: "Arsipkan", danger: true }))) return;
           run(() => archiveProduct(p.id, !p.archived), p.archived ? "Produk diaktifkan" : "Produk diarsipkan");
-        }} />
+        }} />}
 
       <Sheet visible={!!mode} onClose={() => setMode(null)} title={mode === "penyesuaian" ? "Penyesuaian stok (opname)" : mode === "masuk" ? "Stok masuk" : "Stok keluar"} testID="stock-sheet"
         footer={<Button title="Simpan" icon="check" onPress={submit} testID="stock-save-button" />}>
