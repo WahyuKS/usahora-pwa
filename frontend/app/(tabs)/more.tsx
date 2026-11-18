@@ -46,7 +46,7 @@ export default function More() {
     },
   ];
   return (
-    <Screen tab back={false} title="Lainnya" subtitle={user?.email} right={<SyncPill />} testID="more-screen">
+    <Screen tab back={false} title="Lainnya" subtitle={user?.email || business?.name} right={<SyncPill />} testID="more-screen">
       <Card style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.lg }} testID="profile-card" onPress={isOwner ? () => router.push("/settings") : undefined}>
         {business?.logo_file_id ? <Thumb fileId={business.logo_file_id} size={56} /> : <Thumb label={business?.name ?? "U"} size={56} />}
         <View style={{ flex: 1, minWidth: 0 }}>

@@ -7,7 +7,7 @@ import { ActivityIndicator, Linking, Modal, Pressable, View } from "react-native
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, Icon, IconButton, IconTile, T, useUI, type IconName } from "@/src/components/ui";
-import { fileUrl, uploadImage } from "@/src/lib/api";
+import { CLOUD_ENABLED, fileUrl, hasToken, uploadImage } from "@/src/lib/api";
 import { radius, spacing, useTheme } from "@/src/theme";
 
 /** Authenticated image from object storage, with an initial-letter / icon fallback. */
@@ -29,6 +29,8 @@ export function PhotoPicker({ fileId, onChange, label, testID, square = true }: 
   const { colors } = useTheme();
   const { toast } = useUI();
   const [busy, setBusy] = useState(false);
+  // Photos are stored in cloud object storage; without a cloud account there is nowhere to put them.
+  if (!CLOUD_ENABLED || !hasToken()) return null;
   const pick = async () => {
     const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
     if (!perm.granted) {

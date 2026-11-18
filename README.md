@@ -4,6 +4,12 @@
 
 USAHORA is a mobile-first business app for Indonesian UMKM: kasir/POS, produk & stok, pembelian & supplier, pelanggan, keuangan, invoice & quotation, tagihan, kalkulator HPP, dokumen & SOP, laporan, backup/restore, and cloud sync. All data is stored on the device first, so it keeps working offline.
 
+## Website & PWA (no server needed)
+USAHORA runs as a website that can be installed on Android, iPhone and desktop (PWA), and keeps working offline.
+- Without a backend URL the web build starts in **local mode**: the user enters a business name and starts working. All data stays in that browser/device.
+- Build: `cd frontend && npx yarn@1.22.22 build:web` → static files in `frontend/dist/` (any HTTPS static host, at the root of a domain).
+- Details, deployment, what was tested and known limits: [docs/WEB-PWA.md](docs/WEB-PWA.md).
+
 ## Stack (adapted to the Emergent platform)
 The original brief asked for React + Vite + Laravel + MySQL. This platform builds with:
 - **App**: Expo (React Native + TypeScript, expo-router). It runs on Android and iPhone (Expo Go or a native build) and in the web preview.
@@ -70,10 +76,8 @@ The original brief asked for React + Vite + Laravel + MySQL. This platform build
 - Offline-first with a sync status indicator and a manual sync button.
 
 ## Not done yet / risks
-- This is not a PWA (no service worker or manifest). The web preview works in the browser, but installable offline web needs a separate web build.
-- Product photos are not built yet; they need object storage.
+- Web storage still uses localStorage (about 5 MB); moving it to IndexedDB is planned (docs/phase2-technical-notes.md).
+- In local mode (no account) product photos, cloud backup, staff accounts and sync are not available.
 - Full double-entry bookkeeping (chart of accounts, balance sheet) is not built. Laba rugi is a simple transaction-based report.
 - Local data is not encrypted on the device.
 - Multi-device sync has not been tested under heavy concurrent editing. Stock conflicts between devices can make stock negative without any warning.
-- There is no barcode scanner yet (camera).
-- There are no roles or staff accounts yet; there is one owner per business.

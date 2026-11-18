@@ -23,7 +23,7 @@ const STATUS_LABEL = { online: "Online", offline: "Offline — data tersimpan di
 export default function Settings() {
   const db = useDB();
   const sync = useSync();
-  const { business, updateBusiness, user, isOwner } = useAuth();
+  const { business, updateBusiness, user, isOwner, isLocal } = useAuth();
   const { colors } = useTheme();
   const { toast, confirm } = useUI();
   const [b, setB] = useState<Business>(business ?? ({ name: "", address: "", phone: "", email: "", currency: "IDR", invoice_footer: "", tax_enabled: false, tax_rate: 11, bank_info: "", id: "" } as Business));
@@ -106,7 +106,18 @@ export default function Settings() {
   };
 
   return (
-    <Screen title="Pengaturan" subtitle={user?.email} testID="settings-screen">
+    <Screen title="Pengaturan" subtitle={isLocal ? "Mode lokal" : user?.email} testID="settings-screen">
+      {isLocal ? (<>
+      <SectionTitle title="Penyimpanan data" />
+      <Card testID="local-mode-card">
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <T v="label">Mode lokal (tanpa akun)</T>
+          <Badge label={sync.online ? "Online" : "Offline"} tone={sync.online ? "success" : "warning"} />
+        </View>
+        <T v="caption" style={{ marginTop: 4 }}>Semua data tersimpan di perangkat/browser ini dan bisa dipakai tanpa internet. Data tidak dikirim ke server mana pun.</T>
+        <T v="caption" color={colors.warningText} style={{ marginTop: spacing.sm }}>Penting: menghapus data browser, uninstall, atau ganti perangkat akan menghilangkan data. Ekspor backup JSON secara rutin.</T>
+      </Card>
+      </>) : (<>
       <SectionTitle title="Sinkronisasi cloud" />
       <Card testID="sync-card">
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -124,6 +135,7 @@ export default function Settings() {
         <Button title="Sinkronkan sekarang" icon="refresh-cw" onPress={doSync} loading={busy === "sync"} style={{ marginTop: spacing.md }} testID="sync-now-button" />
         <T v="caption" style={{ marginTop: spacing.sm }}>Semua data disimpan dulu di perangkat (bisa dipakai offline), lalu dikirim ke cloud dengan kunci unik per perubahan sehingga transaksi tidak tergandakan.</T>
       </Card>
+      </>)}
       {db.meta.conflicts.length ? (
         <>
           <SectionTitle title={`Konflik (${db.meta.conflicts.length})`} />
@@ -146,12 +158,12 @@ export default function Settings() {
       {isOwner ? (<>
       <SectionTitle title="Profil usaha" />
       <Card>
-        <PhotoPicker fileId={b.logo_file_id} label="Logo usaha" testID="business-logo" onChange={async (id) => {
+        {isLocal ? null : <PhotoPicker fileId={b.logo_file_id} label="Logo usaha" testID="business-logo" onChange={async (id) => {
           const next = { ...b, logo_file_id: id };
           setB(next);
           const r = await updateBusiness(next);
           toast(r === "online" ? "Logo disimpan" : "Logo disimpan di perangkat, dikirim saat online", r === "online" ? "success" : "info");
-        }} />
+        }} />}
         <Field label="Nama usaha *" value={b.name} onChangeText={set("name")} testID="business-name-input" />
         <Field label="Alamat" value={b.address} onChangeText={set("address")} multiline testID="business-address-input" />
         <View style={{ flexDirection: "row", gap: spacing.md }}>
@@ -170,7 +182,7 @@ export default function Settings() {
         <Button title="Simpan profil" icon="check" onPress={saveProfile} loading={busy === "profile"} testID="business-save-button" />
       </Card>
 
-      <StaffSection />
+      {isLocal ? null : <StaffSection />}
 
       <SectionTitle title="Backup & restore" />
       <Card testID="backup-card">
@@ -178,8 +190,8 @@ export default function Settings() {
         <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
           <Button title="Ekspor backup JSON" icon="download" variant="secondary" onPress={exportBackup} testID="backup-export-button" />
           <Button title="Impor backup JSON" icon="upload" variant="outline" onPress={importBackup} testID="backup-import-button" />
-          <Button title="Backup ke cloud" icon="cloud-upload" variant="secondary" onPress={cloudBackup} loading={busy === "cloud"} testID="backup-cloud-button" />
-          <Button title="Pulihkan dari cloud" icon="cloud" variant="outline" onPress={cloudRestore} loading={busy === "cloudr"} testID="backup-cloud-restore-button" />
+          {isLocal ? null : <Button title="Backup ke cloud" icon="cloud-upload" variant="secondary" onPress={cloudBackup} loading={busy === "cloud"} testID="backup-cloud-button" />}
+          {isLocal ? null : <Button title="Pulihkan dari cloud" icon="cloud" variant="outline" onPress={cloudRestore} loading={busy === "cloudr"} testID="backup-cloud-restore-button" />}
         </View>
         <T v="caption" style={{ marginTop: spacing.sm }}>Catatan: data lokal di perangkat belum dienkripsi khusus. Lindungi perangkat Anda dengan kunci layar.</T>
       </Card>

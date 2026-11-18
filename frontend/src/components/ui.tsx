@@ -10,6 +10,7 @@ import { KeyboardAvoidingView, KeyboardAwareScrollView } from "react-native-keyb
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSync } from "@/src/data/sync";
+import { hasToken } from "@/src/lib/api";
 import { num, toNum } from "@/src/lib/format";
 import { usesNativeTabs } from "@/src/navigation";
 import { fonts, fontSize, makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -289,10 +290,12 @@ export function SyncPill() {
   const { status } = useSync();
   const router = useRouter();
   const { colors } = useTheme();
-  const [label, icon] = SYNC_LABEL[status];
+  // Local mode (no cloud account): nothing is synced, so show where the data lives instead.
+  const local = !hasToken();
+  const [label, icon] = local ? (status === "offline" ? ["Offline · lokal", "wifi-off"] : ["Data lokal", "hard-drive"]) : SYNC_LABEL[status];
   const { width } = useWindowDimensions();
   const compact = width < 420;
-  const tone = status === "offline" || status === "error" ? [colors.warningSoft, colors.warningText] : status === "success" ? [colors.successSoft, colors.success] : [colors.brandTertiary, colors.brandPrimary];
+  const tone = local ? [colors.brandTertiary, colors.brandPrimary] : status === "offline" || status === "error" ? [colors.warningSoft, colors.warningText] : status === "success" ? [colors.successSoft, colors.success] : [colors.brandTertiary, colors.brandPrimary];
   return (
     <Pressable testID="sync-status-pill" accessibilityLabel={label} onPress={() => router.push("/settings")} style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 32, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: tone[0] }}>
       <Icon name={icon as IconName} size={14} color={tone[1]} />
@@ -467,7 +470,9 @@ const useStyles = makeStyles((c) => ({
     shadowColor: c.shadow, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   inputWrap: { flexDirection: "row", alignItems: "center", height: 48, borderWidth: 1, borderColor: c.border, borderRadius: radius.md, backgroundColor: c.surface, paddingHorizontal: spacing.md },
-  input: { flex: 1, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}) },
+  // minWidth 0: on web an <input> has an intrinsic width (about 20 characters) and would otherwise
+  // overflow its box in half-width fields on small phones.
+  input: { flex: 1, minWidth: 0, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}) },
   overlay: { flex: 1, backgroundColor: c.overlay },
   sheet: { backgroundColor: c.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, paddingTop: spacing.sm, width: "100%", maxWidth: 640, alignSelf: "center" },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: c.borderStrong, alignSelf: "center", marginBottom: spacing.sm },

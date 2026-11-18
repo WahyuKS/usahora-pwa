@@ -91,7 +91,15 @@ export function unloadDB() {
   listeners.forEach((l) => l());
 }
 
+// Local mode (no cloud account): nothing is ever sent, so changes are not queued. This keeps the
+// device copy small (no second copy of every record in the outbox).
+let queueEnabled = true;
+export const setSyncQueueEnabled = (on: boolean) => {
+  queueEnabled = on;
+};
+
 function enqueue(op: Omit<OutboxOp, "op_id" | "attempts" | "created_at">) {
+  if (!queueEnabled) return state.outbox;
   let outbox = state.outbox;
   const immutable = IMMUTABLE.includes(op.entity as Entity);
   const idx = immutable ? -1 : outbox.findIndex((o) => o.entity === op.entity && o.record_id === op.record_id && !inflight.has(o.op_id));

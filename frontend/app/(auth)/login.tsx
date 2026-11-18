@@ -1,10 +1,11 @@
 import { Link } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from "@/src/auth";
+import { getLocalWorkspace, useAuth, type LocalWorkspace } from "@/src/auth";
+import { CLOUD_ENABLED } from "@/src/lib/api";
 import { Button, Card, Field, Logo, T } from "@/src/components/ui";
 import { spacing, useTheme } from "@/src/theme";
 
@@ -32,7 +33,63 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
   );
 }
 
+/** Start without an account: all data stays on this device (works offline). */
+function LocalStart() {
+  const { startLocal } = useAuth();
+  const { colors } = useTheme();
+  const [existing, setExisting] = useState<LocalWorkspace | null | undefined>(undefined);
+  const [businessName, setBusinessName] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getLocalWorkspace().then(setExisting);
+  }, []);
+  const go = async () => {
+    setError(null);
+    if (!existing && businessName.trim().length < 2) return setError("Isi nama usaha (minimal 2 huruf)");
+    setBusy(true);
+    try {
+      await startLocal(existing ? undefined : { name, business_name: businessName });
+    } catch (e: any) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+  if (existing === undefined) return null;
+  return (
+    <View testID="local-start">
+      {existing ? (
+        <>
+          <T v="body" style={{ marginBottom: spacing.lg }}>Data usaha <T v="label">{existing.business.name}</T> tersimpan di perangkat ini.</T>
+          {error ? <T v="caption" color={colors.error} style={{ marginBottom: spacing.md }}>{error}</T> : null}
+          <Button title={`Buka ${existing.business.name}`} onPress={go} loading={busy} size="lg" testID="local-open-button" />
+        </>
+      ) : (
+        <>
+          <Field label="Nama usaha" value={businessName} onChangeText={setBusinessName} placeholder="Contoh: Toko Maju Jaya" testID="local-business-input" onSubmitEditing={go} />
+          <Field label="Nama Anda (opsional)" value={name} onChangeText={setName} placeholder="Nama pemilik" testID="local-name-input" onSubmitEditing={go} />
+          {error ? <T v="caption" color={colors.error} testID="local-error" style={{ marginBottom: spacing.md }}>{error}</T> : null}
+          <Button title="Mulai sekarang" onPress={go} loading={busy} size="lg" testID="local-start-button" />
+        </>
+      )}
+      <T v="caption" style={{ marginTop: spacing.md }}>Tanpa akun dan bisa dipakai offline. Data hanya tersimpan di perangkat/browser ini, jadi lakukan backup secara rutin dari menu Pengaturan.</T>
+    </View>
+  );
+}
+
 export default function Login() {
+  if (!CLOUD_ENABLED) {
+    return (
+      <AuthShell title="Mulai pakai USAHORA" subtitle="Kelola kasir, stok, keuangan, dan invoice langsung dari perangkat ini">
+        <LocalStart />
+      </AuthShell>
+    );
+  }
+  return <CloudLogin />;
+}
+
+function CloudLogin() {
   const { login } = useAuth();
   const { colors } = useTheme();
   const [email, setEmail] = useState("");
@@ -64,6 +121,9 @@ export default function Login() {
         <T v="body" color={colors.muted}>Belum punya akun?</T>
         <Link href="/register" testID="go-register-link"><T v="label" color={colors.brandPrimary}>Daftar gratis</T></Link>
       </View>
+      <View style={{ height: 1, backgroundColor: colors.border, marginVertical: spacing.xl }} />
+      <T v="label" style={{ marginBottom: spacing.md }}>Atau mulai tanpa akun</T>
+      <LocalStart />
     </AuthShell>
   );
 }
