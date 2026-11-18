@@ -1,0 +1,51 @@
+{
+  "summary": "First full test of USAHORA. Backend: 15/15 pytest passing (auth 201/409/422/401, /auth/me, PUT /business, sync push idempotency, immutable sales not overwritten, product conflict detection + force, unknown entity rejected, delete->pull deleted flag, business isolation, server-forced business_id, backup create/latest/400/404). Frontend (390x844) tested end-to-end: register -> onboarding -> demo load -> KPIs + period chips; POS (tiles, pay, checkout, Uang pas, change calc, receipt, stock decrease, credit sale requires customer, piutang); products add/validate/edit/stock in/out/opname/archive (hidden from POS); suppliers/customers add/edit; customer detail piutang; sale 'Catat pelunasan' -> Lunas; purchases (supplier+product, received -> stock +5, pay later -> Lunas); finance expense/income -> P&L updates; HPP (Rp10.000 / Rp14.286, margin 100 error); invoices create/preview/mark paid, quotation -> invoice; bills add + pay recurring (next due created); docs edit/save; reports all 10 types + periods + CSV; settings sync now, profile save, backup export, cloud backup, demo clear (synced deletes to cloud); persistence after reload; logout/login. Two real bugs found: (1) doc template edits are overwritten on every new login/device (data loss), (2) demo flag is local-only so demo data cannot be cleared after re-login/on another device (demo@usahora.id included). Rate limiter keys on ingress pod IP. No deprecated Expo packages detected. No SafeAreaView issues detected.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login, POST /api/auth/register (rate_limit)", "issue": "rate_limit() keys on request.client.host which is the Kubernetes ingress pod IP (logs show 10.211.x.x for all clients). All real users share one 10/min bucket per ingress pod -> in production 11th login within a minute from ANY user gets 429. Use X-Forwarded-For (first hop) / X-Real-IP, or key by IP+email.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/sync/pull", "issue": "No pagination; returns up to 20000 records in one response (initial pull for large shops will be heavy/truncated silently at 20000)."},
+      {"endpoint": "startup/shutdown", "issue": "@app.on_event is deprecated in FastAPI; use lifespan."},
+      {"endpoint": "POST /api/sync/push conflict check", "issue": "Conflict compares client-supplied payload.updated_at (device clock) with base_updated_at; device clock skew can cause false/missed conflicts. Consider using server_updated_at as the version."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Docs templates seeding (store.ts:76-79)", "issue": "DATA LOSS: when local docs are empty (new device, fresh install, re-login after logout), DOC_TEMPLATES are upserted with fixed ids (tpl-*) and fresh updated_at BEFORE pull, then pushed (no base_updated_at -> no conflict check) and overwrite the user's edited SOP/doc on the server. Reproduced: edited 'Checklist Pembukaan Toko' -> 'TEST_SOP Edit', saved (toast ok); after next login server copy was back to template title. Deleted templates are also resurrected. Fix: seed templates only after first pull when server has no docs, or seed with base_updated_at/'insert-if-absent' semantics (or server-side seed at register).", "testID": "doc-save-button", "priority": "HIGH"},
+      {"component": "Demo mode flag (store.ts:21/159 meta.demo local only)", "issue": "meta.demo is stored only locally. After logging in on another device/browser (or after logout), demo data is pulled but demo-banner is hidden and Settings shows 'Isi data demo' (demo-load-button) instead of 'Hapus semua data demo' -> user cannot clear demo data and loading again would duplicate it. Reproduced on test account and on demo@usahora.id. Fix: derive demo flag from presence of records with is_demo=true (or sync it in business/meta).", "testID": "demo-clear-button / demo-banner", "priority": "HIGH"},
+      {"component": "HPP calculator", "issue": "With invalid margin (>=100) the error shows correctly but the result card still displays misleading values (Harga jual rekomendasi Rp0, laba -Rp10.000, markup -100%). Hide or show '—'.", "testID": "hpp-result", "priority": "LOW"},
+      {"component": "Demo data generator", "issue": "Demo sales contain duplicate line items for same product (e.g. TRX-...-00050E has 'Air Mineral 600ml' twice qty 1) and 'Stok awal' movement is dated today while demo sales are dated earlier -> stock history looks out of order.", "testID": "stock-movements-list", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Outbox flush on web", "issue": "Sync is debounced 1.5s; there is no flush on pagehide/visibilitychange for web. A credit sale created <1.5s before the tab closed was not pushed (still in local outbox; would sync on reopen of same browser). Low risk, consider flush on AppState background / pagehide.", "affected_testIDs": ["checkout-confirm-button"]}
+    ],
+    "design_issues": [
+      {"screen": "POS / Checkout / Product detail", "issues": ["pos-clear-cart 'Kosongkan' touch target 63x15px (<44)", "checkout-quick-* buttons, stock-in/out/adjust buttons, period chips are 36px tall (<44)", "cart-line discount toggle 136x30", "'Opname' button label truncated to 'Opna...' at 390px width on product detail"]},
+      {"screen": "Global toast", "issues": ["Toast renders over the header title (covers screen title/product name for ~2s after each save)"]},
+      {"screen": "Checkout sheet", "issues": ["Sheet slide-in animation is slow (~1-2s before content reachable); tap on 'Uang pas' immediately after opening fails"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_usahora_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "HIGH: Fix doc template seeding in store.ts:76-79 so templates never overwrite server docs (seed after initial pull only if server has none, or seed server-side on register).",
+    "HIGH: Make demo flag derived from is_demo records (or synced) so demo-banner and demo-clear-button appear after re-login/on other devices; prevent double-loading demo.",
+    "HIGH: Rate limiter must use X-Forwarded-For/X-Real-IP (and/or email) instead of request.client.host behind ingress.",
+    "LOW: Increase touch targets to >=44px (pos-clear-cart, size=sm buttons, chips); fix 'Opname' truncation; hide HPP results when margin invalid; move toast below header or make it not cover title.",
+    "LOW: Flush outbox on web pagehide/visibilitychange; paginate /api/sync/pull; replace on_event with lifespan; clean demo duplicate line items."
+  ],
+  "critical_code_review_comments": [
+    "server.py sync_push: immutable entities correctly reject re-upserts; deletes on immutable allowed (needed for demo clear) - OK.",
+    "Payments are separate immutable records (addSalePayment) so sale immutability does not block pelunasan sync - good design.",
+    "Frontend env var is EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL) - tests use it.",
+    "No deprecated packages (expo-av / expo-barcode-scanner / expo-background-fetch) found; KeyboardAvoidingView from react-native-keyboard-controller used."
+  ],
+  "updated_files": ["/app/backend/tests/test_usahora_api.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "~92% (all requested flows work; 2 data bugs: doc edits overwritten on re-login, demo clear unavailable after re-login)"},
+  "seed_data_creation": "Created fresh TEST accounts only: test_ui_a1fe77a4@example.com / Password123 (demo data + TEST_ products/customers/suppliers/purchase/invoices/bills/finance), test_demo_75c77697@example.com (demo loaded then cleared), plus pytest accounts test_<hex>@example.com. demo@usahora.id was only logged in/viewed - no data changed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use EXPO_PUBLIC_BACKEND_URL. Login/register are rate limited 10/min per ingress IP - avoid many logins. Sheets animate slowly: wait ~1.5-2s after opening checkout/stock/finance sheets. Stack screens hide tab bar; use '[data-testid=\"header-back-button\"]:visible'. Finance sheet requires category: '[data-testid^=\"finance-category-\"]'. Picker options: <pickerTestID>-option-N (customer-picker, supplier-picker, purchase-product-picker, invoice-customer-picker, invoice-product-picker). To verify doc fix: edit doc, login in new browser context, check doc title via /api/sync/pull.",
+  "rca_of_issue": "Doc overwrite: store.ts load() seeds DOC_TEMPLATES (fixed ids tpl-*) whenever local docs array is empty, which is true on every fresh login/device before the first pull. upsert() queues outbox ops without base_updated_at; first push after login (observed: many ops applied immediately post-login) overwrites server docs with template content. Demo flag: meta.demo only set by loadDemo() locally and in backup restore; pull never sets it, so Settings/demo-banner treat pulled demo data as real data."
+}

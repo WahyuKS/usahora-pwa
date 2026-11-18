@@ -1,0 +1,36 @@
+{
+  "summary": "Retest of iteration-1 fixes. All 5 requested items work. Doc templates: on a fresh account I edited template tpl-checklist-buka to 'TEST_Judul Edit', deleted tpl-checklist-tutup, synced, logged out and back in (same browser context and a NEW browser context). The edited title was kept and the deleted template stayed deleted, both in the UI and in /api/sync/pull. Demo flag: after loading demo + sync, a new browser context shows demo-banner and demo-clear-button (demo-load-button hidden). Clear + sync left 0 live is_demo records on the server and the banner went away. Rate limit: 11 logins with different X-Forwarded-For values returned no 429; the same XFF gets 429 on the 11th attempt. UI fixes: pos-clear-cart is 82x44, the 'Opname' label is not truncated (scrollWidth == clientWidth), HPP margin 100/150/-5 hides all results and shows an error, and the toast now sits at the bottom (y=543 of 667, pointerEvents none). Regression: demo login, dashboard KPIs (all 8 plus the chart) and POS checkout (receipt TRX-261118-001609) all work. Backend: 19/19 pytest passed (15 regression + 4 new).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "rate_limit() server.py:84-85", "issue": "The bucket key is the FIRST X-Forwarded-For value, which the client controls. Ingress passes it through: rotating XFF values gave separate buckets in the test. So an attacker can skip login brute-force protection by sending a random XFF header. Use the right-most XFF entry (the one ingress appends) or X-Real-IP set by ingress, and add a per-email bucket."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "product/[id]", "issues": ["Stock action buttons stock-in-button / stock-out-button / stock-adjust-button are 36px tall (size=sm), below the 44px minimum touch target"]},
+      {"screen": "dashboard", "issues": ["Long business name is cut with an ellipsis in the header ('Toko Demo USAH...') because of the sync pill. Acceptable, but consider wrapping or a smaller font"]},
+      {"screen": "POS (tab screens)", "issues": ["The toast at bottom: insets.bottom+80 sits over the cart bar/pos-clear-cart area on POS. It does not block taps (pointerEvents none) but covers the cart total for a moment"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration2_fixes.py", "/app/backend/tests/test_usahora_api.py", "/app/test_reports/pytest/pytest_results_it2.xml"],
+  "action_items": [
+    "MEDIUM (security): In rate_limit, stop trusting the client-supplied first X-Forwarded-For entry. Use the right-most/ingress-set IP and also limit per email for login.",
+    "LOW: Make the product detail stock buttons (Masuk/Keluar/Opname) at least 44px tall.",
+    "LOW (carry-over): flush the outbox on web pagehide/visibilitychange; paginate /api/sync/pull (to_list(20000)); replace @app.on_event with lifespan."
+  ],
+  "critical_code_review_comments": [
+    "store.ts:76-81 seeds templates locally with updated_at=2000-01-01 and does not queue them. Server edits/deletes are applied by applyRemote, which is correct. A deleted template is seeded again locally before the pull, so it shows briefly when offline on a new device until the first pull. This is acceptable.",
+    "selectors.ts:108 hasDemo checks products/sales/customers/finance/invoices/bills only. purchases and suppliers are not checked, but this is fine because demo always creates products.",
+    "server.py still uses deprecated @app.on_event startup/shutdown."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration2_fixes.py"],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100% of requested fix verifications"},
+  "seed_data_creation": "Created test accounts test_it2_*@example.com (pytest), test_ui2_d6cac7@example.com and test_ui3_ba0f27@example.com (password Passw0rd!). test_ui3 has demo data plus 1 POS sale. The demo account was only read, never changed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Base URL is EXPO_PUBLIC_BACKEND_URL. To avoid 429 in API tests, send a unique X-Forwarded-For per login. Doc row inner_text starts with an icon glyph, so match titles with the docs-screen inner_text instead. Verify server state through /api/sync/pull. Toast testID='toast'."
+}

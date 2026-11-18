@@ -1,200 +1,79 @@
-# expo
+# USAHORA — Business Management System for UMKM
 
-A small starter for a mobile app with a backend: **FastAPI with MongoDB**
-behind an **Expo + expo-router** app in strict TypeScript. The app runs as a
-web preview in the browser, in Expo Go on a phone, and as a native build.
-Nothing app-specific is built yet; it is a skeleton to build on.
+*Manage smarter. Grow further.*
 
-Versions are not written down here. Every package is at whatever
-`package.json` pins; open that file only when a version actually matters.
+USAHORA is a mobile-first business app for Indonesian UMKM: kasir/POS, produk & stok, pembelian & supplier, pelanggan, keuangan, invoice & quotation, tagihan, kalkulator HPP, dokumen & SOP, laporan, backup/restore, and cloud sync. All data is stored on the device first, so it keeps working offline.
 
-## Layout
+## Stack (adapted to the Emergent platform)
+The original brief asked for React + Vite + Laravel + MySQL. This platform builds with:
+- **App**: Expo (React Native + TypeScript, expo-router). It runs on Android and iPhone (Expo Go or a native build) and in the web preview.
+- **Local data (offline-first)**: a local-first repository (`frontend/src/data/store.ts`) kept in device storage (AsyncStorage on native, localStorage on web). It holds immutable sales, payments and stock-movement records, plus an **outbox** of pending changes.
+- **Backend**: FastAPI (`backend/server.py`) with MongoDB, JWT auth and bcrypt password hashes.
 
-```
-expo/
-  backend/   FastAPI + motor (async MongoDB) + Pydantic v2 — python, /root/.venv
-  frontend/  Expo + expo-router (file-based routes under app/)
-  memory/    test_credentials.md — logins the testing subagent reads
-  tests/     backend pytest package
-```
+## Architecture
+- Every mutation is written locally first, then queued in the outbox with a unique `op_id` (idempotency key).
+- Sync (`frontend/src/data/sync.ts`):
+  - Sends changes in batches to `POST /api/sync/push`, then pulls `GET /api/sync/pull?since=`.
+  - Runs automatically when the device comes back online or the app returns to the foreground, and a short delay after each change.
+  - Retries with backoff. A manual sync button is in Pengaturan.
+- Duplicates are prevented:
+  - The server stores every `op_id` it has applied, so a re-sent change is ignored.
+  - Immutable entities (`sales`, `stockMovements`, `payments`) are insert-only, so stock is never reduced twice.
+- Conflicts on editable records (products, customers, etc.) are detected with `base_updated_at`. The user then picks "Pakai versi saya" or "Pakai versi server" in Pengaturan. The app does not silently apply "last write wins".
+- Business isolation: the server always takes `business_id` from the JWT user, never from the client.
+- Stock is calculated from stock movements (awal, masuk, keluar, penyesuaian, penjualan, pembelian), never edited directly.
+- Finance:
+  - Omzet (sales) is kept separate from cash in (payments received).
+  - Piutang = unpaid sales + open invoices. Utang = unpaid purchases.
+  - Laba kotor = omzet − HPP. Laba bersih = laba kotor + pendapatan lain − biaya operasional.
+  - Purchase payments count as cash out but not as operating cost, because stock cost is counted through HPP.
 
 ## Running
+- Backend: `uvicorn server:app --host 0.0.0.0 --port 8001`. Needs these values in `backend/.env`: `MONGO_URL`, `DB_NAME`, `JWT_SECRET`.
+- Frontend: `cd frontend && yarn expo start`. Needs `EXPO_PUBLIC_BACKEND_URL` in `frontend/.env`.
+- Deploy: use the Emergent **Publish** button. Android and iOS builds are generated from the deployment panel.
 
-Supervisor runs everything in the pod (see "Pod conventions"). By hand, from
-two terminals:
+## API
+| Method | Path | Purpose |
+|---|---|---|
+| POST | /api/auth/register | name, business_name, email, password (min 8) |
+| POST | /api/auth/login | rate limited |
+| GET | /api/auth/me | current user + business |
+| PUT | /api/business | business profile & invoice settings |
+| POST | /api/sync/push | ops[] → applied / duplicates / conflicts / rejected |
+| GET | /api/sync/pull | changed records since timestamp |
+| POST | /api/backup, GET /api/backup/latest | cloud backup snapshots |
 
-```bash
-cd backend && uvicorn server:app --host 0.0.0.0 --port 8001 --reload   # http://localhost:8001
-cd frontend && yarn expo start --port 3000                             # web preview + Expo Go QR
-```
+## Done
+- Login and registration, plus business profile and invoice settings.
+- Dashboard with real figures and period filters: today, 7 days, this month, this year.
+- POS:
+  - Search, category filter, cart, discount per item and per transaction.
+  - Payment by tunai, transfer, QRIS or lainnya, with automatic change calculation.
+  - Sales on credit (piutang) for a selected customer.
+  - Receipt print and PDF share.
+- Products: add, edit, archive, stock in/out, stock opname, movement history, low-stock alerts, inventory value.
+- Suppliers and purchases: payment status, receiving goods adds stock, extra costs are spread into the unit cost.
+- Customers: transaction history, total spend, piutang, and recording later payments.
+- Finance: income and expenses, simple laba rugi, cash flow, cash journal.
+- Invoices and quotations:
+  - Automatic numbering, tax, discount, preview, print, PDF and share.
+  - Mark as paid (recorded as income), convert a quotation into an invoice.
+- Bills: recurring bills, in-app reminders on the dashboard, paying a bill records an expense.
+- HPP calculator: margin and markup shown separately, margin validated to stay under 100%, price simulation.
+- Documents & SOP: 9 editable templates, printable.
+- Reports: 10 report types with date, category and product filters; export as CSV (opens in Excel) or PDF.
+- Backup and restore:
+  - Export and import JSON, with file validation and a confirmation step.
+  - Cloud backup and restore, and the time of the last backup.
+- Demo data: optional, can be removed in one tap.
+- Offline-first with a sync status indicator and a manual sync button.
 
-## How the app reaches the backend
-
-Every backend route lives under `/api`, because the backend mounts one
-`APIRouter(prefix="/api")`. The public preview URL sits in front of both
-servers: `/api/*` is forwarded to the backend on `8001`, everything else to
-Metro on `3000`.
-
-The app reads that URL from `EXPO_PUBLIC_BACKEND_URL` in its `.env` (filled in
-by the platform) and calls `EXPO_PUBLIC_BACKEND_URL + "/api/..."`. The URL has
-to be absolute because the same bundle runs on a phone in Expo Go, where a
-relative `/api` has nothing to reach. So: never `localhost`, never a port,
-never a relative path. Only `EXPO_PUBLIC_*` names are visible to the app, and
-Metro bakes their values in at bundle time, so a `.env` change takes effect
-only after you restart the Metro program (`expo`).
-
-## Backend
-
-FastAPI, async throughout. The venv is `/root/.venv` (`python` on PATH);
-dependencies come from `backend/requirements.txt`.
-
-- **Entry point.** `backend/server.py` creates `app`, creates
-  `api_router = APIRouter(prefix="/api")`, registers routes **on the router**,
-  then calls `app.include_router(api_router)`. CORS is open. Never attach a
-  route to `app` directly; it lands outside `/api` and the phone cannot reach
-  it.
-- **The route pattern.** Copy the `status` route: a Pydantic model for the
-  body and one for the response (`StatusCheckCreate`, `StatusCheck`), an
-  `async def` handler decorated with
-  `@api_router.post("/status", response_model=StatusCheck)`, and an awaited
-  motor call inside. FastAPI validates the body before your handler runs; a bad
-  body gets an automatic `422` with `{"detail": [...]}`.
-- **Growing.** When `server.py` gets crowded, move models to `backend/models/`
-  and routes to `backend/routers/`, one module per resource, each exporting an
-  `APIRouter` that `server.py` mounts with `api_router.include_router(...)`.
-- **MongoDB.** `server.py` creates `client = AsyncIOMotorClient(MONGO_URL)` and
-  `db = client[DB_NAME]`; routers import `db` from there (or from
-  `backend/lib/db.py` once you split files). Collections are attributes:
-  `await db.status_checks.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)`.
-  Every query's index goes in `INDEXES` next to `db`. Motor connects
-  lazily, so importing `server` never waits on Mongo.
-- **Ids.** Documents use a string `id` from `uuid4`, not `ObjectId`, which
-  cannot be turned into JSON. Keep the `uuid4` default-factory pattern and
-  leave `_id` out of every response.
-- **Config.** `backend/.env` holds `MONGO_URL` and `DB_NAME`, loaded with
-  `python-dotenv`. Mongo runs in the pod, so `MONGO_URL` is `localhost`. Add
-  new secrets here and read them with `os.environ`.
-- **Dates.** Store aware UTC (`datetime.now(timezone.utc)`, never `utcnow()`);
-  motor returns datetimes without a timezone, so attach one before comparing.
-- **Quick check.** `cd /app/backend && python -c 'import server'` catches
-  syntax and import errors without waiting for the supervisor log.
-
-## Frontend
-
-- The app is built with Expo, React Native and React, written in strict
-  TypeScript. The version is as per mentioned in `package.json`. Check there
-  if it matters. Metro, the dev server, listens on port `3000` and
-  does two jobs at once: it serves the web preview you see in the browser, and
-  it serves the manifest that Expo Go downloads when a phone scans the QR
-  code. The import alias `@/*` points at the root of the app folder, so
-  `@/src/theme` means `frontend/src/theme.ts`.
-- **Routing** is expo-router, file-based: every file under `app/` is a screen
-  (`app/profile/settings.tsx` is `/profile/settings`), `_layout.tsx` files
-  define navigators, typed routes are on. Non-screen code (components, hooks,
-  the API module, utilities) goes under `src/`. `app/index.tsx` is a
-  placeholder; replace it.
-- **Root layout.** `app/_layout.tsx` wraps the app in `ErrorBoundary` →
-  `QueryClientProvider` → `KeyboardProvider` → `<Stack>`. Keep those when you
-  rewrite it; add your route groups and login gating inside the `Stack`.
-- **Theme.** `src/theme.ts` holds the color tokens (keys match the `color`
-  block of `/app/design_guidelines.json`), `useTheme()` and `makeStyles()`.
-  Every color in a `.tsx` file comes from it; see `TEMPLATE.md` §5.
-- **Storage.** `import { storage } from "@/src/utils/storage"`: `getItem`,
-  `setItem`, `removeItem` for ordinary data; `secureGet`, `secureSet`,
-  `secureRemove` for tokens. Never import AsyncStorage, SecureStore, MMKV or
-  `expo-sqlite/kv-store` directly.
-- **Uploads.** `import { uploadForm } from "@/src/utils/upload"` for every
-  file upload: `uploadForm(url, { fields, files: { image: { uri, name, mimeType } } })`.
-  Never append `{ uri, name, type }` to a `FormData` yourself and never set
-  `Content-Type`; that passes in the web preview and throws
-  `Unsupported FormDataPart implementation` on a phone (see `TEMPLATE.md` §9).
-- **Data.** TanStack Query is wired (`src/query-client.ts`, provider in the
-  root layout). Use `useQuery` and `useMutation` against one typed API module
-  (`src/api.ts`, see `TEMPLATE.md` §4), not fetch inside `useEffect`. Nothing
-  generates types across the Python boundary: write a TypeScript interface
-  mirroring each Pydantic model and change both in the same edit.
-- **Error boundary.** `src/components/error-boundary.tsx` is mounted once at
-  the root; a render crash shows a reload screen instead of a blank app. Do not
-  add more.
-- **testIDs.** `constants/testIds/` is the registry (`auth.js` ships); one file
-  per feature, re-exported from `index.js`. React Native uses `testID`, with
-  kebab-case values by role.
-- **`app.json`** is yours: name, slug, scheme, icon/splash, plugins,
-  permissions. `ios.bundleIdentifier` and `android.package` are set by the
-  platform; leave them unless the user asks.
-- **Packages.** `yarn expo install <package>` for SDK-matched versions. Never
-  npm; avoid plain `yarn add` for Expo/RN packages. The `preinstall` guard
-  refuses `expo-av`, `expo-barcode-scanner`, `expo-background-fetch` and
-  `expo-file-system/legacy`.
-
-## TypeScript
-
-`tsconfig.json` extends `expo/tsconfig.base` with `strict: true`. In the pod:
-
-```bash
-cd /app/frontend && yarn tsc --noEmit
-```
-
-Metro only transpiles, so this is the only place type errors show up. Lint
-with `yarn lint` from the same directory (`expo lint`).
-
-## When the build is complete (tier 1)
-
-Run three checks once, in the same turn: a curl smoke over the key `/api`
-endpoints through `EXPO_PUBLIC_BACKEND_URL` (status plus one field, and one
-request that should fail); `yarn tsc --noEmit` from the app dir; and one
-happy-path walk through the core journey on the web preview at a phone
-viewport. All clean → restart Metro and finish. Any failure is a real bug: fix
-it, re-run that check, then hand over to the testing subagent. No typecheck,
-lint or smoke passes while still building; tier 1 runs exactly once.
-
-## Testing
-
-**Backend (pytest).** Specs in `tests/` at the template root as `test_*.py`.
-The ini lives in `backend/`, so pass it explicitly or its settings are skipped:
-
-```bash
-cd /app && pytest -c backend/pytest.ini tests
-```
-
-`backend/pytest.ini` sets `addopts = -n 2 --dist loadscope`, so tests already
-run in parallel; do not pass your own `-n`. Serial is `-n 0`, never
-`-p no:xdist` (it errors, because `addopts` still passes `-n`). Tests hit the
-live uvicorn process on `8001`, the same app the preview shows.
-
-**Frontend (web preview).** The testing subagent drives `http://localhost:3000`
-with Playwright at a phone viewport and writes
-`/app/test_reports/iteration_N.json`. It cannot open Expo Go, so native-only
-chrome (native tabs, SF Symbols, permission prompts) is checked by following
-`TEMPLATE.md` §6 to §8, not by screenshot. Give it every login through
-`memory/test_credentials.md`.
-
-## Pod conventions
-
-In the Emergent pod this template runs under supervisord; these override the
-local-run notes above.
-
-- Programs: `expo` (Metro, `/app/frontend`), `backend` (uvicorn,
-  `/app/backend`), `mongodb`. After changing
-  `.env` or `app.json`, or installing a dependency, restart and wait:
-
-  ```bash
-  sudo supervisorctl restart expo backend
-  for i in $(seq 60); do curl -sf http://localhost:8001/api/ >/dev/null && break; sleep 1; done
-  for i in $(seq 90); do curl -s -m 2 http://localhost:3000/status | grep -q 'packager-status:running' && break; sleep 2; done
-  ```
-
-- Status only after a restart you triggered: `sudo supervisorctl status expo
-  backend`. Logs: `/var/log/supervisor/expo.err.log`,
-  `expo.out.log`, `backend.err.log`, `backend.out.log`.
-- In a browser, open the preview URL. On a phone,
-  scan the Expo Go QR code. The backend answers on `8001` directly, or through
-  the preview URL under `/api`.
-- Mongo runs in the pod (`mongod --bind_ip_all`); `MONGO_URL` is `localhost`.
-- Both servers reload on code edits (Fast Refresh, uvicorn `--reload`), so
-  normal iteration needs no restart. You still restart after `.env`,
-  `app.json` or package changes, and always restart Metro before handing the
-  preview back to the user.
-- Protected, never edit (relative to the app dir): `metro.config.js`,
-  `scripts/**`, `tsconfig.json`, `eslint.config.js`, the platform keys in
-  `.env`, and `backend/pytest.ini`. Never create `eas.json`.
+## Not done yet / risks
+- This is not a PWA (no service worker or manifest). The web preview works in the browser, but installable offline web needs a separate web build.
+- Product photos are not built yet; they need object storage.
+- Full double-entry bookkeeping (chart of accounts, balance sheet) is not built. Laba rugi is a simple transaction-based report.
+- Local data is not encrypted on the device.
+- Multi-device sync has not been tested under heavy concurrent editing. Stock conflicts between devices can make stock negative without any warning.
+- There is no barcode scanner yet (camera).
+- There are no roles or staff accounts yet; there is one owner per business.

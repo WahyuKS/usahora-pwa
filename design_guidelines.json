@@ -1,0 +1,156 @@
+{
+  "app_name": "USAHORA",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A premium, high-trust SaaS environment that balances operational density with calming whitespace, echoing Stripe and Linear.",
+  "color": {
+    "surface": "#FFFFFF",
+    "onSurface": "#0F172A",
+    "surfaceSecondary": "#F8FAFC",
+    "onSurfaceSecondary": "#0F172A",
+    "surfaceTertiary": "#F1F5F9",
+    "onSurfaceTertiary": "#0F172A",
+    "surfaceInverse": "#0F172A",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#2563EB",
+    "brandPrimary": "#2563EB",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#DBEAFE",
+    "onBrandSecondary": "#1E3A8A",
+    "brandTertiary": "#EFF6FF",
+    "onBrandTertiary": "#2563EB",
+    "success": "#16A34A",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#DC2626",
+    "onError": "#FFFFFF",
+    "info": "#3B82F6",
+    "onInfo": "#FFFFFF",
+    "border": "#E2E8F0",
+    "borderStrong": "#CBD5E1",
+    "muted": "#64748B"
+  },
+  "typography": {
+    "displayFontFamily": "Inter",
+    "textFontFamily": "Inter",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use generous padding around content to avoid overcrowding. Cards never flush to screen edges; always use md or lg margin. Group related elements tightly (xs/sm) while separating distinct sections broadly (xl/2xl).",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use blur on the sticky bottom tab bar.",
+      "Use blur for sticky headers when scrolling content passes underneath.",
+      "Use blur on bottom-sheet drag handles/headers for POS checkout."
+    ],
+    "dont's": [
+      "Never blur standard cards, form inputs, or data table rows.",
+      "Avoid heavy glassmorphism on dense data screens to preserve maximum readability."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Dashboard",
+      "purpose": "High-level status page summarizing KPIs, revenue trends, and sync status for immediate operational clarity.",
+      "states": {
+        "loading": "Skeleton loaders for KPI cards and chart area.",
+        "empty": "N/A - Demo data or zero-states shown structurally.",
+        "error": "Card showing connection error with 'Retry Sync' button."
+      },
+      "layout": "Sticky header with Command/Search icon, profile avatar, and a persistent 'Offline/Sync' status pill. Top section has a row of 2-column KPI cards (Sales, Expenses). Middle section holds a Line Chart for revenue trends with horizontal scrollable period filter chips above it. Bottom section shows a prioritized list of Alerts or Unpaid Invoices. Background is surfaceSecondary (#F8FAFC) with surface (#FFFFFF) cards."
+    },
+    {
+      "name": "POS / Kasir",
+      "purpose": "Rapid transaction processing optimized for one-handed cashier operation and high-glare environments.",
+      "states": {
+        "loading": "Spinner centered in the product grid.",
+        "empty": "Illustration of a basket with 'Mulai tambahkan produk ke keranjang'.",
+        "error": "Toast or banner above cart showing 'Gagal memuat produk'."
+      },
+      "layout": "Split-viewport architecture: Top 60% is a category pill rail and a 2-column grid of product tiles (image + name + price). Bottom 40% is a persistent sliding Cart sheet showing added items (tabular numerals for prices) and a prominent sticky 'Charge / Bayar' CTA pinned safely above the home indicator in the thumb zone."
+    },
+    {
+      "name": "Invoice & Quotation",
+      "purpose": "Minimalist document builder to create, preview, and send professional invoices on the go.",
+      "states": {
+        "loading": "Skeleton rows mimicking invoice line items.",
+        "empty": "Clean desk illustration with 'Belum ada invoice bulan ini' and a primary CTA 'Buat Invoice'.",
+        "error": "Error banner with 'Gagal memuat daftar invoice'."
+      },
+      "layout": "List view uses clean cards with customer name, ID, amount, and Status pills (Lunas, Pending, Overdue). Builder view uses a single-column scroll layout with 'click-to-open' edit fields for line items (no modals), keeping context intact. Sticky 'Preview & Save' button fixed at the bottom."
+    },
+    {
+      "name": "Menu / Drawer",
+      "purpose": "Secondary navigation hub for accessing Inventory, Customers, Finance, Docs, and Settings.",
+      "states": {
+        "loading": "List skeleton.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Rendered as a full-screen sheet or the last tab ('Lainnya'). Vertical list of menu items with Phosphor icons in brandTertiary tinted containers. Clean dividers between logical groups (Modules vs Settings)."
+    }
+  ],
+  "images": {
+    "auth_hero": {
+      "url": "https://images.unsplash.com/photo-1605106702842-01a887a31122?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxibHVlJTIwZ2VvbWV0cmljJTIwYW5hbHl0aWNzJTIwbG9nb3xlbnwwfHx8fDE3OTQ5ODQ0NjF8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Blue geometric abstract analytics logo pattern"
+    },
+    "empty_state_desk": {
+      "url": "https://images.pexels.com/photos/29547865/pexels-photo-29547865.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Clean minimal desk setup for empty state illustration"
+    }
+  },
+  "instructions_to_main_agent": [
+    "COLORS: Use the user-provided exact hex codes for the palette. Do NOT use default Material or iOS blues, stick to Primary #2563EB, text #0F172A, background #F8FAFC, and surface #FFFFFF.",
+    "TYPOGRAPHY: Exclusively use 'Inter' for both display and text families as requested by the user. Ensure font sizes scale properly using the provided base.",
+    "LAYOUT - SAAS FEEL: Emulate Stripe/Linear premium SaaS quality. Use 1px borders (#E2E8F0) and shadow tier 1 (subtle, directional) for cards. Maintain generous internal padding (16px/24px).",
+    "LAYOUT - POS: Build the POS screen using an ergonomic bottom-heavy layout. The 'Charge' button must be in the lower 30% of the screen (thumb zone).",
+    "OFFLINE SYNC: Place a persistent but subtle sync status pill (e.g., 'Offline', 'Syncing...', 'Up to date') in the global header or dashboard top area.",
+    "TEXT ON IMAGES: For the auth/splash screen or any card using the `auth_hero` background, apply the mandatory top-to-bottom 3-stop gradient scrim to ensure text readability.",
+    "NO EMOJIS: Do not use emojis anywhere in the system UI. Rely on Phosphor icons inside `brandTertiary` tinted rounded squares for list rows and settings items.",
+    "TABULAR DATA: Where prices and quantities align (e.g., POS Cart, Invoice Builder), align monetary values to the right to maintain vertical alignment."
+  ],
+  "haptics": {
+    "primary_button": "impactLight",
+    "tab_change": "selection",
+    "pos_add_item": "impactMedium",
+    "success_toast": "notificationSuccess",
+    "error_toast": "notificationError"
+  }
+}
