@@ -13,7 +13,7 @@
 // itself inside a transaction callback (use `tx`); such a call waits and fails after 15 s.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { primaryKeyOf, type Repo, type Row, type Table, type TxScope } from "./types";
+import { ALL_TABLES, primaryKeyOf, type Repo, type Row, type Table, type TxScope } from "./types";
 
 export type KV = {
   get(key: string): Promise<string | null>;
@@ -62,7 +62,16 @@ export async function createRepo(name: string, kv?: KV): Promise<Repo> {
   if (store.keys) {
     const live = new Set(Object.entries(manifest).map(([t, g]) => dataKey(t as Table, g)));
     const all = await store.keys().catch(() => [] as readonly string[]);
-    for (const k of all) if (k.startsWith(prefix) && k.includes("@") && !live.has(k)) await store.remove(k).catch(() => {});
+    // Only keys that are exactly `<prefix><table>@<gen>` belong to THIS repo. A plain prefix match would
+    // also hit another repo whose name starts with this one (owner `usahora_b1` vs staff `usahora_b1_u2`)
+    // and delete that user's data.
+    const ownsKey = (k: string) => {
+      if (!k.startsWith(prefix)) return false;
+      const rest = k.slice(prefix.length);
+      const at = rest.indexOf("@");
+      return at > 0 && (ALL_TABLES as string[]).includes(rest.slice(0, at));
+    };
+    for (const k of all) if (ownsKey(k) && !live.has(k)) await store.remove(k).catch(() => {});
   }
 
   const load = async (t: Table) => {
@@ -79,7 +88,11 @@ export async function createRepo(name: string, kv?: KV): Promise<Repo> {
 
   const commit = async (changed: Map<Table, Map<string, Row>>) => {
     if (!changed.size) return;
-    const gen = `${Date.now().toString(36)}${(seq++).toString(36)}`;
+    // Unique per commit even across restarts or a clock change; a gen equal to the live one would
+    // make step 3 delete the data just written.
+    let gen: string;
+    do gen = `${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    while ([...changed.keys()].some((t) => manifest[t] === gen));
     await store.multiSet([...changed].map(([t, m]) => [dataKey(t, gen), JSON.stringify([...m.values()])]));
     const next = { ...manifest };
     for (const t of changed.keys()) next[t] = gen;
@@ -87,7 +100,7 @@ export async function createRepo(name: string, kv?: KV): Promise<Repo> {
     const old = manifest;
     manifest = next;
     for (const [t, m] of changed) cache.set(t, m);
-    for (const t of changed.keys()) if (old[t]) await store.remove(dataKey(t, old[t])).catch(() => {});
+    for (const t of changed.keys()) if (old[t] && old[t] !== gen) await store.remove(dataKey(t, old[t])).catch(() => {});
   };
 
   const scope = (staged?: Map<Table, Map<string, Row>>): TxScope => {
@@ -112,12 +125,16 @@ export async function createRepo(name: string, kv?: KV): Promise<Repo> {
   let chain: Promise<unknown> = Promise.resolve();
   const queued = <T>(fn: () => Promise<T>): Promise<T> => {
     let started = false;
-    const run = chain.then(() => { started = true; return fn(); });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = chain.then(() => { started = true; clearTimeout(timer); return fn(); });
     chain = run.catch(() => {});
-    const timeout = new Promise<never>((_, rej) => setTimeout(() => {
-      if (!started) rej(new Error("Operasi penyimpanan menunggu terlalu lama (jangan panggil repo di dalam transaction, gunakan tx)"));
-    }, WAIT_LIMIT_MS));
-    return Promise.race([run, timeout]);
+    const timeout = new Promise<never>((_, rej) => {
+      timer = setTimeout(() => {
+        if (!started) rej(new Error("Operasi penyimpanan menunggu terlalu lama (jangan panggil repo di dalam transaction, gunakan tx)"));
+      }, WAIT_LIMIT_MS);
+    });
+    // The timer is cleared as soon as the operation starts, so no timer outlives a finished operation.
+    return Promise.race([run, timeout]).finally(() => clearTimeout(timer));
   };
 
   const direct = scope();

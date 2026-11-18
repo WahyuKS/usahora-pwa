@@ -15,6 +15,7 @@ const LEGACY_TABLES = RECORD_TABLES.filter((t) => t !== "categories");
 const MIGRATION_KEY = "migration_legacy_v1";
 // Failures are recorded separately so they never erase the record of an earlier successful run.
 const MIGRATION_ERROR_KEY = "migration_legacy_v1_last_error";
+const PREMIGRATION_SNAPSHOT_ID = "premigration_legacy_v1";
 
 export type TableReport = { source: number; duplicatesInSource: number; written: number; keptNewer: number; verified: boolean };
 export type MigrationResult =
@@ -49,7 +50,10 @@ const newer = (a: Row, b: Row) => {
 
 /** Normalise the legacy blob into rows per table, removing duplicate ids (keeps the newest). */
 export function parseLegacy(raw: string) {
-  const data = JSON.parse(raw);
+  let data = JSON.parse(raw);
+  // store.ts saves through storage.setItem(key, JSON.stringify(state)), and the helper JSON-encodes
+  // again, so the value on disk is a JSON string that contains the JSON object. Accept both forms.
+  if (typeof data === "string") data = JSON.parse(data);
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Format data lama tidak dikenali");
   const tables: Partial<Record<Table, Row[]>> = {};
   const dupes: Record<string, number> = {};
@@ -119,6 +123,11 @@ export async function migrateLegacy(opts: {
   const writeTables: Table[] = [...LEGACY_TABLES, "outbox", "kv"];
   let committed = false;
   try {
+    // Keep the state from before the FIRST migration on disk, so it can be undone later
+    // (rollbackLegacyMigration). Never replaced by later runs. If this write fails, nothing is migrated.
+    if (!(await repo.get("snapshots", PREMIGRATION_SNAPSHOT_ID))) {
+      await repo.put("snapshots", { id: PREMIGRATION_SNAPSHOT_ID, created_at: now(), kind: "pre-migration", sourceHash, tables: before });
+    }
     await repo.transaction(writeTables, async (tx) => {
       for (const t of writeTables) {
         const pk = primaryKeyOf(t);
@@ -183,5 +192,25 @@ export async function migrateLegacy(opts: {
   return { status: "done", at, sourceHash, tables: reports };
 }
 
+/**
+ * Manual recovery: put the repository back exactly as it was before the first legacy migration.
+ * The legacy value itself was never touched, so the old app data is still there after this.
+ * Warning: anything written to the repository after the migration is discarded too
+ * (in Phase 1 nothing else writes to the repository).
+ */
+export async function rollbackLegacyMigration(repo: Repo): Promise<{ status: "nothing" } | { status: "rolledBack"; counts: Record<string, number> }> {
+  const snap = await repo.get("snapshots", PREMIGRATION_SNAPSHOT_ID);
+  if (!snap?.tables) return { status: "nothing" };
+  const tables = snap.tables as Partial<Record<Table, Row[]>>;
+  await restore(repo, tables);
+  await repo.refresh();
+  const counts: Record<string, number> = {};
+  for (const t of Object.keys(tables) as Table[]) {
+    counts[t] = await repo.count(t);
+    if (counts[t] !== tables[t]!.length) throw new Error(`Rollback tidak lengkap pada tabel ${t}`);
+  }
+  return { status: "rolledBack", counts };
+}
+
 export const LEGACY_RECORD_TABLES: RecordTable[] = LEGACY_TABLES;
-export { MIGRATION_ERROR_KEY, MIGRATION_KEY };
+export { MIGRATION_ERROR_KEY, MIGRATION_KEY, PREMIGRATION_SNAPSHOT_ID };

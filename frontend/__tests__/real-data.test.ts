@@ -14,7 +14,8 @@ const maybe = file ? it : it.skip;
 
 maybe("migrates a real legacy database with matching counts, content and stock totals", async () => {
   const raw = readFileSync(file!, "utf8");
-  const blob = JSON.parse(raw);
+  let blob = JSON.parse(raw);
+  if (typeof blob === "string") blob = JSON.parse(blob); // value copied straight from storage is double-encoded
   const repo = await createWeb("real_data_check");
   const res = await migrateLegacy({ repo, readLegacy: async () => raw });
   expect(res.status).toBe("done");
