@@ -1,15 +1,16 @@
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Platform, Pressable, Switch, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { Badge, Button, Card, Divider, Field, ListRow, Screen, SectionTitle, T, useUI } from "@/src/components/ui";
-import { buildBackup, clearDemo, loadDemo, restoreBackup, validateBackup } from "@/src/data/actions";
+import { buildBackup, clearDemo, loadDemo, mergeBackup, restoreBackup, validateBackup } from "@/src/data/actions";
 import { hasDemo } from "@/src/data/selectors";
 import { PhotoPicker } from "@/src/components/media";
 import { StaffSection } from "@/src/components/staff";
-import { setMeta, useDB } from "@/src/data/store";
+import { lastPersistError, setMeta, useDB } from "@/src/data/store";
+import { storageInfo, type StorageInfo } from "@/src/data/persistence";
 import { resolveConflict, syncNow, useSync } from "@/src/data/sync";
 import type { Business } from "@/src/data/types";
 import { api } from "@/src/lib/api";
@@ -24,6 +25,10 @@ export default function Settings() {
   const db = useDB();
   const sync = useSync();
   const { business, updateBusiness, user, isOwner, isLocal } = useAuth();
+  const [store, setStore] = useState<StorageInfo | null>(null);
+  useEffect(() => {
+    storageInfo().then(setStore).catch(() => setStore(null));
+  }, []);
   const { colors } = useTheme();
   const { toast, confirm } = useUI();
   const [b, setB] = useState<Business>(business ?? ({ name: "", address: "", phone: "", email: "", currency: "IDR", invoice_footer: "", tax_enabled: false, tax_rate: 11, bank_info: "", id: "" } as Business));
@@ -59,12 +64,43 @@ export default function Settings() {
   const doRestore = async (obj: any, source: string) => {
     const err = validateBackup(obj);
     if (err) return toast(err, "error");
-    if (obj.business_id && obj.business_id !== user?.business_id) return toast("Backup ini milik usaha lain dan tidak dapat dipulihkan ke akun ini", "error");
+    const otherDevice = !!obj.business_id && obj.business_id !== user?.business_id;
+    // Cloud accounts: never mix businesses. Local mode: another business id means another device/browser.
+    if (otherDevice && !isLocal) return toast("Backup ini milik usaha lain dan tidak dapat dipulihkan ke akun ini", "error");
     const count = ["products", "sales", "customers", "invoices"].map((k) => `${(obj[k] ?? []).length} ${ENTITY_LABEL[k] ?? k}`).join(", ");
-    const ok = await confirm({ title: "Pulihkan data?", message: `Data di perangkat ini akan DIGANTI dengan isi backup ${source} (${count}, dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}). Tindakan ini tidak dapat dibatalkan.`, confirmText: "Pulihkan", danger: true });
+    const ok = await confirm({ title: "Pulihkan data?", message: `${otherDevice ? `Backup ini dari perangkat lain ("${obj.business_name ?? "-"}"). ` : ""}Data di perangkat ini akan DIGANTI dengan isi backup ${source} (${count}, dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}). Tindakan ini tidak dapat dibatalkan.`, confirmText: "Pulihkan", danger: true });
     if (!ok) return;
     restoreBackup(obj);
     toast("Data berhasil dipulihkan");
+  };
+
+  const readBackupFile = async (): Promise<any | null> => {
+    const res = await DocumentPicker.getDocumentAsync({ type: ["application/json", "*/*"], copyToCacheDirectory: true });
+    if (res.canceled) return null;
+    const uri = res.assets[0].uri;
+    const text = Platform.OS === "web" ? await (await fetch(uri)).text() : await new File(uri).text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      toast("File bukan JSON yang valid", "error");
+      return null;
+    }
+  };
+
+  const mergeFromFile = async () => {
+    try {
+      const obj = await readBackupFile();
+      if (!obj) return;
+      const err = validateBackup(obj);
+      if (err) return toast(err, "error");
+      if (obj.business_id && obj.business_id !== user?.business_id && !isLocal) return toast("Backup ini milik usaha lain dan tidak dapat digabungkan ke akun ini", "error");
+      const ok = await confirm({ title: "Gabungkan data?", message: `Data dari backup "${obj.business_name ?? "-"}" (dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}) akan DITAMBAHKAN ke perangkat ini. Data yang sama digabung, versi terbaru dipakai, dan tidak ada data di perangkat ini yang dihapus.`, confirmText: "Gabungkan" });
+      if (!ok) return;
+      const r = mergeBackup(obj);
+      toast(`Selesai: ${r.added} data baru, ${r.updated} diperbarui`);
+    } catch {
+      toast("Gagal membaca file backup", "error");
+    }
   };
 
   const importBackup = async () => {
@@ -115,6 +151,8 @@ export default function Settings() {
           <Badge label={sync.online ? "Online" : "Offline"} tone={sync.online ? "success" : "warning"} />
         </View>
         <T v="caption" style={{ marginTop: 4 }}>Semua data tersimpan di perangkat/browser ini dan bisa dipakai tanpa internet. Data tidak dikirim ke server mana pun.</T>
+        {store ? <T v="caption" style={{ marginTop: spacing.sm }} testID="storage-engine-text">Penyimpanan: {store.engine === "indexeddb" ? "IndexedDB" : store.engine === "localstorage" ? "localStorage (mode cadangan)" : "perangkat"}{store.persisted === true ? " · dilindungi dari pembersihan otomatis browser" : store.persisted === false ? " · browser belum mengizinkan penyimpanan permanen" : ""}</T> : null}
+        {lastPersistError ? <T v="caption" color={colors.error} style={{ marginTop: 4 }}>Gagal menyimpan perubahan terakhir: {lastPersistError}. Segera ekspor backup.</T> : null}
         <T v="caption" color={colors.warningText} style={{ marginTop: spacing.sm }}>Penting: menghapus data browser, uninstall, atau ganti perangkat akan menghilangkan data. Ekspor backup JSON secara rutin.</T>
       </Card>
       </>) : (<>
@@ -189,10 +227,12 @@ export default function Settings() {
         <T v="caption" testID="last-backup-text">Backup terakhir: {db.meta.lastBackupAt ? fmtDateTime(db.meta.lastBackupAt) : "belum pernah"}{db.meta.lastCloudBackupAt ? ` · cloud ${fmtDateTime(db.meta.lastCloudBackupAt)}` : ""}</T>
         <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
           <Button title="Ekspor backup JSON" icon="download" variant="secondary" onPress={exportBackup} testID="backup-export-button" />
-          <Button title="Impor backup JSON" icon="upload" variant="outline" onPress={importBackup} testID="backup-import-button" />
+          <Button title="Impor backup JSON (ganti semua)" icon="upload" variant="outline" onPress={importBackup} testID="backup-import-button" />
+          <Button title="Gabungkan dari perangkat lain" icon="merge" variant="outline" onPress={mergeFromFile} testID="backup-merge-button" />
           {isLocal ? null : <Button title="Backup ke cloud" icon="cloud-upload" variant="secondary" onPress={cloudBackup} loading={busy === "cloud"} testID="backup-cloud-button" />}
           {isLocal ? null : <Button title="Pulihkan dari cloud" icon="cloud" variant="outline" onPress={cloudRestore} loading={busy === "cloudr"} testID="backup-cloud-restore-button" />}
         </View>
+        <T v="caption" style={{ marginTop: spacing.sm }}>Pakai di beberapa perangkat: di perangkat baru pilih {"\"Impor backup\""} dari perangkat utama, lalu secara berkala ekspor backup di satu perangkat dan pilih {"\"Gabungkan\""} di perangkat lainnya. Ini bukan sinkronisasi otomatis; penghapusan tidak ikut terbawa.</T>
         <T v="caption" style={{ marginTop: spacing.sm }}>Catatan: data lokal di perangkat belum dienkripsi khusus. Lindungi perangkat Anda dengan kunci layar.</T>
       </Card>
 

@@ -8,7 +8,7 @@ React Native Web), jadi semua modul yang sudah ada ikut tersedia.
 
 | Mode | Kapan aktif | Data disimpan di | Butuh server? |
 |---|---|---|---|
-| **Lokal (tanpa akun)** | Build tanpa `EXPO_PUBLIC_BACKEND_URL` (default untuk website) | Browser/perangkat pengguna | Tidak |
+| **Lokal (tanpa akun)** | Build tanpa `EXPO_PUBLIC_BACKEND_URL` (default untuk website) | Browser/perangkat pengguna (IndexedDB) | Tidak |
 | **Cloud (akun)** | Build dengan `EXPO_PUBLIC_BACKEND_URL=https://...` | Perangkat + server (sinkronisasi) | Ya, backend FastAPI di `backend/` |
 
 Pada mode lokal:
@@ -16,7 +16,20 @@ Pada mode lokal:
 - Tidak ada data yang dikirim ke server mana pun. Antrean sinkronisasi (outbox) tidak diisi.
 - Foto produk/logo, backup cloud, akun karyawan, dan sinkronisasi disembunyikan (butuh server).
 - "Keluar" lalu masuk lagi membuka **data usaha yang sama** di perangkat itu.
-- Pengguna wajib rutin **Ekspor backup JSON** (Pengaturan → Backup & restore).
+- Pengguna wajib rutin **Ekspor backup JSON** (Pengaturan → Backup & restore); dashboard mengingatkan bila belum backup 7 hari.
+- Masa coba 14 hari, lalu aktivasi kode lisensi sekali bayar. Lihat [SELLING.md](SELLING.md).
+- Beberapa perangkat: Impor backup (pindah) dan "Gabungkan dari perangkat lain" (manual, tanpa server).
+- Struk ke printer thermal Bluetooth (BLE, 58 mm) lewat Chrome/Edge di Android atau laptop.
+
+## Penyimpanan (web)
+
+- Data disimpan di **IndexedDB** per usaha (`usahora_<businessId>`), ditulis per record yang berubah.
+- Saat pertama kali dibuka setelah update, data lama di localStorage **disalin sekali** ke IndexedDB,
+  diverifikasi, dan **tidak pernah diubah/dihapus**. Setelah itu salinan lama dibekukan: tidak ditulis
+  dan tidak dimigrasi ulang, sehingga data yang dihapus tidak bisa muncul kembali.
+- Jika IndexedDB tidak tersedia (mis. mode privat tertentu) atau migrasi gagal, aplikasi tetap memakai
+  localStorage seperti sebelumnya (tidak ada data hilang). Pengaturan menampilkan jenis penyimpanan.
+- Aplikasi meminta browser menyimpan data secara permanen (`navigator.storage.persist()`).
 
 ## Menjalankan secara lokal
 
@@ -93,8 +106,10 @@ dan jalankan backend (`backend/`, lihat README utama).
 
 - Belum diuji di HP Android/iPhone sungguhan, Safari, dan Firefox. Pemasangan PWA belum dicoba
   di perangkat nyata (hanya diverifikasi manifest, ikon, dan service worker aktif).
-- Penyimpanan web masih **localStorage** (±5 MB per situs), belum IndexedDB. Cukup untuk usaha kecil;
-  untuk data besar perlu Phase 2 (store → repository IndexedDB). Lihat `docs/phase2-technical-notes.md`.
+- Penyimpanan web sudah IndexedDB. Data tetap dimuat penuh ke memori saat aplikasi dibuka, jadi
+  usaha dengan puluhan ribu transaksi perlu diuji kecepatannya.
+- Printer Bluetooth belum diuji dengan printer fisik (hanya dengan printer tiruan di tes otomatis).
+- "Gabungkan dari perangkat lain" belum diuji lewat pemilih file di browser (logikanya diuji otomatis).
 - Safari/iOS dapat menghapus data situs yang tidak dibuka ±7 hari jika tidak dipasang ke layar utama.
   Sarankan pengguna memasang PWA dan rutin backup.
 - Data lokal tidak dienkripsi.

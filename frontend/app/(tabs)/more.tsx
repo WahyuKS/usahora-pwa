@@ -14,7 +14,7 @@ type Item = { title: string; sub: string; icon: IconName; href: Href; badge?: nu
 export default function More() {
   const db = useDB();
   const router = useRouter();
-  const { user, logout, business, isOwner } = useAuth();
+  const { user, logout, business, isOwner, isLocal } = useAuth();
   const { confirm } = useUI();
   const due = billsDue(db).length;
   const groups: { title: string; items: Item[] }[] = [
@@ -42,6 +42,7 @@ export default function More() {
         { title: "Laporan", sub: "Penjualan, laba rugi, stok, ekspor", icon: "chart-column", href: "/reports" },
         { title: "Dokumen & SOP", sub: "Template SOP dan checklist", icon: "book-open", href: "/docs" },
         { title: "Pengaturan", sub: "Profil usaha, sinkronisasi, backup", icon: "settings", href: "/settings" },
+        ...(isLocal ? [{ title: "Lisensi", sub: "Status masa coba dan aktivasi", icon: "key-round" as IconName, href: "/license" as Href }] : []),
       ],
     },
   ];

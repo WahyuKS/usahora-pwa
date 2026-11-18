@@ -7,6 +7,7 @@ import { Badge, Button, Card, Divider, EmptyState, Field, ListRow, Screen, Secti
 import { addSalePayment } from "@/src/data/actions";
 import { useDB } from "@/src/data/store";
 import type { PayMethod, Payment, Sale } from "@/src/data/types";
+import { BluetoothPrintButton } from "@/src/components/bt-print-button";
 import { methodLabel, receiptHtml } from "@/src/lib/docs";
 import { printHtml, sharePdf } from "@/src/lib/export";
 import { fmtDateTime, rp, toNum } from "@/src/lib/format";
@@ -69,6 +70,7 @@ export default function SaleDetail() {
         <Button title="Cetak" icon="printer" variant="outline" style={{ flex: 1 }} onPress={() => safe(() => printHtml(h()))} testID="sale-print-button" />
         <Button title="Bagikan PDF" icon="share-2" variant="outline" style={{ flex: 1 }} onPress={() => safe(() => sharePdf(h(), sale.number))} testID="sale-share-button" />
       </View>
+      <BluetoothPrintButton sale={sale} business={business} customer={customer} paid={paid} testID="sale-bt-print-button" />
       {sale.note ? <T v="caption" style={{ marginTop: spacing.md }}>Catatan: {sale.note}</T> : null}
       <T v="caption" style={{ marginTop: spacing.md }} color={colors.muted}>Transaksi bersifat permanen (tidak dapat diubah) agar laporan dan stok tetap konsisten.</T>
 

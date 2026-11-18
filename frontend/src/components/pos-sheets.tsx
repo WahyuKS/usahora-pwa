@@ -4,6 +4,7 @@ import { Pressable, View } from "react-native";
 import { Button, Divider, Field, Icon, IconButton, PickerSheet, Segment, Sheet, T, useUI } from "@/src/components/ui";
 import type { CartLine } from "@/src/data/actions";
 import type { Business, Contact, PayMethod, Sale } from "@/src/data/types";
+import { BluetoothPrintButton } from "@/src/components/bt-print-button";
 import { receiptHtml } from "@/src/lib/docs";
 import { printHtml, sharePdf } from "@/src/lib/export";
 import { rp, toNum } from "@/src/lib/format";
@@ -141,6 +142,7 @@ export function ReceiptSheet({ sale, onClose, business, customer, paid, onDetail
         <Button title="Cetak" icon="printer" variant="outline" style={{ flex: 1 }} onPress={() => run(() => printHtml(h()))} testID="receipt-print-button" />
         <Button title="Bagikan PDF" icon="share-2" variant="outline" style={{ flex: 1 }} onPress={() => run(() => sharePdf(h(), sale.number))} testID="receipt-share-button" />
       </View>
+      <BluetoothPrintButton sale={sale} business={business} customer={customer} paid={paid} testID="receipt-bt-print-button" />
       <Button title="Lihat detail" variant="ghost" onPress={onDetail} style={{ marginTop: spacing.sm }} testID="receipt-detail-button" />
       <Button title="Transaksi baru" icon="plus" onPress={onClose} style={{ marginTop: spacing.sm }} testID="receipt-new-sale-button" />
     </Sheet>

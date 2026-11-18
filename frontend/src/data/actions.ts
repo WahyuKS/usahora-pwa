@@ -1,5 +1,5 @@
 import { addDays, addMonths, dateKeyToISO, dayKey, nowISO, rp, uuid } from "@/src/lib/format";
-import { ENTITIES, getState, nextNumber, remove, replaceAll, setMeta, upsert, type DBState } from "./store";
+import { ENTITIES, getState, mergeAll, nextNumber, remove, replaceAll, setMeta, upsert, type DBState, type MergeReport } from "./store";
 import { paidMap, stockMap } from "./selectors";
 import type { Bill, Contact, FinanceEntry, Invoice, InvoiceItem, MovementType, PayMethod, Product, Purchase, PurchaseItem, Sale } from "./types";
 
@@ -287,6 +287,13 @@ export function validateBackup(obj: any): string | null {
 export function restoreBackup(obj: Partial<DBState>) {
   replaceAll(obj);
   logActivity("backup", "Data dipulihkan dari backup");
+}
+
+/** Combine a backup from another device with the data on this device (nothing here is deleted). */
+export function mergeBackup(obj: Partial<DBState>): MergeReport {
+  const r = mergeAll(obj);
+  logActivity("backup", `Data digabung dari perangkat lain: ${r.added} baru, ${r.updated} diperbarui`);
+  return r;
 }
 
 export const newId = uuid;

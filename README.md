@@ -9,6 +9,7 @@ USAHORA runs as a website that can be installed on Android, iPhone and desktop (
 - Without a backend URL the web build starts in **local mode**: the user enters a business name and starts working. All data stays in that browser/device.
 - Build: `cd frontend && npx yarn@1.22.22 build:web` → static files in `frontend/dist/` (any HTTPS static host, at the root of a domain).
 - Details, deployment, what was tested and known limits: [docs/WEB-PWA.md](docs/WEB-PWA.md).
+- Selling it (14-day trial, one-time license codes, buyer FAQ): [docs/SELLING.md](docs/SELLING.md).
 
 ## Stack (adapted to the Emergent platform)
 The original brief asked for React + Vite + Laravel + MySQL. This platform builds with:
@@ -76,7 +77,7 @@ The original brief asked for React + Vite + Laravel + MySQL. This platform build
 - Offline-first with a sync status indicator and a manual sync button.
 
 ## Not done yet / risks
-- Web storage still uses localStorage (about 5 MB); moving it to IndexedDB is planned (docs/phase2-technical-notes.md).
+- Web storage uses IndexedDB (old localStorage data is migrated once and kept). Native apps still use AsyncStorage.
 - In local mode (no account) product photos, cloud backup, staff accounts and sync are not available.
 - Full double-entry bookkeeping (chart of accounts, balance sheet) is not built. Laba rugi is a simple transaction-based report.
 - Local data is not encrypted on the device.

@@ -2,8 +2,8 @@
 // Every mutation is written locally, persisted, and queued in the outbox for cloud sync.
 import { useSyncExternalStore } from "react";
 
-import { storage } from "@/src/utils/storage";
 import { dayKey, nowISO, uuid } from "@/src/lib/format";
+import { loadState, saveState } from "./persistence";
 import { DOC_TEMPLATES } from "./templates";
 import type { Meta, OutboxOp } from "./types";
 
@@ -29,7 +29,6 @@ let state: DBState = emptyDB();
 let bid: string | null = null;
 let ready = false;
 const listeners = new Set<() => void>();
-const key = (b: string) => `usahora_db_${b}${keySuffix}`;
 export const inflight = new Set<string>();
 let mutateHook: () => void = () => {};
 export const setMutateHook = (fn: () => void) => {
@@ -54,25 +53,27 @@ function set(next: DBState) {
   clearTimeout(timer);
   timer = setTimeout(persist, 120);
 }
+/** Last save error (shown in Settings). Saving is retried on the next change. */
+export let lastPersistError: string | null = null;
 export async function persist() {
-  if (bid) await storage.setItem(key(bid), JSON.stringify(state));
+  if (!bid) return;
+  const b = bid, sfx = keySuffix, snapshot = state;
+  try {
+    await saveState(b, sfx, snapshot);
+    lastPersistError = null;
+  } catch (e: any) {
+    lastPersistError = e?.message ?? String(e);
+    console.warn("[USAHORA] Gagal menyimpan data:", lastPersistError);
+  }
 }
 
 let keySuffix = "";
 export async function loadDB(b: string, suffix = "") {
   bid = b;
   keySuffix = suffix;
-  const raw = await storage.getItem(key(b), null as string | null);
+  const parsed = await loadState(b, suffix); // web: IndexedDB (migrates the old copy once); native: AsyncStorage
   let s = emptyDB();
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      s = { ...emptyDB(), ...parsed, meta: { ...emptyMeta(), ...parsed.meta } };
-    } catch {
-      // corrupted local copy: keep it aside instead of deleting it
-      await storage.setItem(`${key(b)}_corrupt_${Date.now()}`, raw);
-    }
-  }
+  if (parsed) s = { ...emptyDB(), ...parsed, meta: { ...emptyMeta(), ...parsed.meta } };
   state = s;
   ready = true;
   if (!s.docs.length) {
@@ -85,6 +86,12 @@ export async function loadDB(b: string, suffix = "") {
 }
 
 export function unloadDB() {
+  // Save pending changes of the business being closed before forgetting it (e.g. on logout).
+  if (bid && timer) {
+    clearTimeout(timer);
+    timer = undefined;
+    void persist();
+  }
   bid = null;
   ready = false;
   state = emptyDB();
@@ -170,11 +177,62 @@ export function replaceAll(data: Partial<DBState>) {
   });
   next.meta = { ...emptyMeta(), ...state.meta, counters: { ...state.meta.counters, ...(data.meta?.counters ?? {}) }, demo: !!data.meta?.demo, onboarded: true };
   const now = nowISO();
-  next.outbox = ENTITIES.flatMap((e) =>
+  next.outbox = !queueEnabled ? [] : ENTITIES.flatMap((e) =>
     (next as any)[e].map((r: any) => ({ op_id: uuid(), entity: e, record_id: r.id, action: "upsert", payload: r, base_updated_at: null, created_at: now, attempts: 0 })),
   );
   set(next);
   mutateHook();
+}
+
+export type MergeReport = { added: number; updated: number; unchanged: number };
+const ts = (r: any) => {
+  const t = Date.parse(r?.updated_at ?? "");
+  return isNaN(t) ? 0 : t;
+};
+
+/**
+ * Merge a backup from another device into this one (manual multi-device use without a server).
+ * - Records are matched by id. New ones are added; for editable records the newer version wins.
+ * - Sales, payments and stock movements are never edited, so they are simply combined (no duplicates).
+ * - Nothing on this device is deleted. Document counters never go backwards.
+ */
+export function mergeAll(data: Partial<DBState>): MergeReport {
+  const report: MergeReport = { added: 0, updated: 0, unchanged: 0 };
+  const next: any = { ...state };
+  const now = nowISO();
+  const ops: OutboxOp[] = [];
+  for (const e of ENTITIES) {
+    const incoming = Array.isArray((data as any)[e]) ? ((data as any)[e] as any[]) : [];
+    if (!incoming.length) continue;
+    const local = new Map(state[e].map((r: any) => [r.id, r]));
+    const replaced = new Map<string, any>();
+    const added: any[] = [];
+    for (const raw of incoming) {
+      if (!raw || typeof raw.id !== "string") continue;
+      const rec = { ...raw, business_id: bid };
+      const cur = local.get(rec.id);
+      if (!cur) {
+        if (added.some((a) => a.id === rec.id)) continue; // duplicate inside the backup
+        added.push(rec);
+        report.added++;
+      } else if (!IMMUTABLE.includes(e) && ts(rec) > ts(cur)) {
+        replaced.set(rec.id, rec);
+        report.updated++;
+      } else report.unchanged++;
+      if (queueEnabled && (!cur || replaced.has(rec.id))) ops.push({ op_id: uuid(), entity: e, record_id: rec.id, action: "upsert", payload: rec, base_updated_at: cur?.updated_at ?? null, created_at: now, attempts: 0 });
+    }
+    if (added.length || replaced.size) {
+      added.sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+      next[e] = [...added, ...state[e].map((r: any) => replaced.get(r.id) ?? r)];
+    }
+  }
+  const counters = { ...state.meta.counters };
+  for (const [k, v] of Object.entries((data as any).meta?.counters ?? {})) counters[k] = Math.max(Number(counters[k] ?? 0), Number(v) || 0);
+  next.meta = { ...state.meta, counters };
+  next.outbox = ops.length ? [...state.outbox, ...ops] : state.outbox;
+  set(next);
+  mutateHook();
+  return report;
 }
 
 /** Unique, human-readable document numbers. Device suffix prevents collisions across devices. */
