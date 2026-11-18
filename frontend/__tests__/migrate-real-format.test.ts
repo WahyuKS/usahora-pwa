@@ -130,6 +130,7 @@ describe("native multi-user isolation", () => {
     const kv = memKV();
     const staff = await createNative("usahora_b1_u2", kv);
     await staff.put("products", { id: "staff-p" });
+    staff.close(); // so staffAgain below really reads from storage, not from a shared instance
     await createNative("usahora_b1", kv); // owner opens and runs its cleanup
     const staffAgain = await createNative("usahora_b1_u2", kv);
     expect(await staffAgain.get("products", "staff-p")).toBeTruthy();
@@ -140,8 +141,9 @@ describe("native multi-user isolation", () => {
     const r = await createNative("usahora_b9", kv);
     await r.put("products", { id: "a" });
     kv.map.set("usahora_v2_usahora_b9_products@orphan", "[]");
-    await createNative("usahora_b9", kv);
+    r.close(); // simulated restart: cleanup runs when the database is opened again
+    const r2 = await createNative("usahora_b9", kv);
     expect(kv.map.has("usahora_v2_usahora_b9_products@orphan")).toBe(false);
-    expect(await (await createNative("usahora_b9", kv)).get("products", "a")).toBeTruthy();
+    expect(await r2.get("products", "a")).toBeTruthy();
   });
 });

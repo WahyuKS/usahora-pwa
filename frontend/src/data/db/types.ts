@@ -31,11 +31,46 @@ export interface TxScope {
   clear(table: Table): Promise<void>;
 }
 
+/** A transaction touched (read or wrote) a table it did not declare. Same behaviour on web and native. */
+export class TransactionScopeError extends Error {
+  constructor(table: string, declared: readonly string[]) {
+    super(`Tabel "${table}" tidak didaftarkan pada transaction ini (terdaftar: ${declared.join(", ") || "-"})`);
+    this.name = "TransactionScopeError";
+  }
+}
+
+/** Another repository instance changed the same data on disk; nothing was written. Safe to retry. */
+export class ConcurrentModificationError extends Error {
+  constructor(table: string) {
+    super(`Data tabel ${table} diubah oleh proses lain. Tidak ada yang ditulis; silakan ulangi.`);
+    this.name = "ConcurrentModificationError";
+  }
+}
+
+/** The repository handle was closed. */
+export class RepoClosedError extends Error {
+  constructor(name: string) {
+    super(`Repository ${name} sudah ditutup`);
+    this.name = "RepoClosedError";
+  }
+}
+
+/**
+ * Contract (identical on web and native):
+ * - Rows go in and come out as copies: changing an object after put() or after get()/getAll()
+ *   never changes stored data. Only put/bulkPut/delete/clear change data.
+ * - Writes run one at a time per database. A write rejected with QueueTimeoutError was never applied.
+ */
 export interface Repo extends TxScope {
   readonly name: string;
   readonly kind: "indexeddb" | "kv";
   count(table: Table): Promise<number>;
-  /** All-or-nothing: if `fn` throws, none of its writes are kept. */
+  /**
+   * All-or-nothing: if `fn` throws (or the final commit fails), none of its writes are kept.
+   * Writes inside `fn` are staged and committed together at the end, so `fn` may await other work.
+   * Only the declared `tables` may be read or written through `tx` (TransactionScopeError otherwise).
+   * Never call the repo itself inside `fn`; use `tx`.
+   */
   transaction<T>(tables: Table[], fn: (tx: TxScope) => Promise<T>): Promise<T>;
   /** Drop any in-memory cache so the next read comes from disk (used to verify migrations). */
   refresh(): Promise<void>;

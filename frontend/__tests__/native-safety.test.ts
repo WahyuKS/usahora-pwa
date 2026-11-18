@@ -188,6 +188,7 @@ describe("native concurrency and crash recovery", () => {
       await t.put("stockMovements", { id: "m-s1", product_id: "p1", qty: -1 });
     })).rejects.toThrow("crash");
     kv.multiSet = orig;
+    repo.close(); // the old instance is gone after a restart (registry hands out a fresh one)
     const reopened = await createRepo("c5", kv); // simulated app restart
     expect(await reopened.count("sales")).toBe(0);
     expect((await reopened.getAll("stockMovements")).reduce((a, m) => a + m.qty, 0)).toBe(10);
