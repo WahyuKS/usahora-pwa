@@ -33,7 +33,7 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.brandPrimary,
         tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.divider, shadowColor: colors.shadow, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, ...(Platform.OS === "web" ? { height: 66 } : {}) },
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.divider, shadowColor: colors.shadow, shadowOpacity: colors.shadowOpacity, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, ...(Platform.OS === "web" ? { height: 66 } : {}) },
         tabBarItemStyle: { alignSelf: "center" },
         tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 0.2 },
       }}

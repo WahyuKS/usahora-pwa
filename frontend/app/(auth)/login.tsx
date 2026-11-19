@@ -21,7 +21,7 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
             <T v="h2" color={colors.onSurfaceInverse} style={{ letterSpacing: 2 }}>USAHORA</T>
           </View>
           <T v="display" color={colors.onSurfaceInverse} style={{ marginTop: spacing.xxl }}>Manage smarter.{"\n"}Grow further.</T>
-          <T v="body" color={colors.borderStrong} style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>Sistem manajemen usaha untuk UMKM: kasir, stok, keuangan, invoice, dan laporan dalam satu aplikasi yang tetap jalan saat offline.</T>
+          <T v="body" color="rgba(255,255,255,0.72)" style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>Sistem manajemen usaha untuk UMKM: kasir, stok, keuangan, invoice, dan laporan dalam satu aplikasi yang tetap jalan saat offline.</T>
           <Card>
             <T v="h2">{title}</T>
             <T v="caption" style={{ marginTop: 4, marginBottom: spacing.xl }}>{subtitle}</T>

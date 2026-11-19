@@ -5,6 +5,7 @@ import { useWindowDimensions, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { BackupReminder } from "@/src/components/backup-reminder";
+import { CollectionsCard } from "@/src/components/collections";
 import { Thumb } from "@/src/components/media";
 import { TrialBanner } from "@/src/license/ui";
 import { Badge, Button, Card, Chips, Divider, EmptyState, Icon, IconTile, ListRow, Logo, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
@@ -130,6 +131,7 @@ export default function Dashboard() {
           </View>
         </Card>
       ) : null}
+      {!isEmpty ? <CollectionsCard /> : null}
       {!isEmpty ? <ProfitHero s={data.s} periodLabel={PERIODS.find((p) => p.key === period)?.label ?? ""} onSell={() => router.push("/pos")} /> : null}
       {hasDemo(db) ? (
         <Card style={{ backgroundColor: colors.warningSoft, borderColor: colors.warningSoft, marginBottom: spacing.md, padding: spacing.md }} onPress={() => router.push("/settings")} testID="demo-banner">

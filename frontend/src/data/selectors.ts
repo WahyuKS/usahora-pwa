@@ -106,3 +106,33 @@ export function billsDue(s: DBState, withinDays = 3) {
 
 /** Demo mode is derived from the records themselves so it survives sync to other devices. */
 export const hasDemo = (s: DBState) => (["products", "sales", "customers", "finance", "invoices", "bills"] as const).some((e) => s[e].some((r: any) => r.is_demo));
+
+// ---------------- Collections (piutang to chase) ----------------
+export type CollectionStatus = "late" | "today" | "soon" | "later" | "none";
+export type CollectionItem = { sale: Sale; customer_id: string | null; due: number; promise: string | null; status: CollectionStatus; daysLate: number };
+
+const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
+
+/** Unpaid sales with their promise-to-pay date. "soon" = within 3 days. Late ones first (oldest first). */
+export function collections(s: DBState, today = dayKey()) {
+  const paid = paidMap(s);
+  const promises = s.meta.promises ?? {};
+  const items: CollectionItem[] = (s.sales as Sale[])
+    .map((sale) => ({ sale, due: Math.max(0, sale.total - (paid[sale.id] ?? 0)) }))
+    .filter((x) => x.due > 0)
+    .map(({ sale, due }) => {
+      const promise = promises[sale.id] ?? sale.due_date ?? null;
+      const diff = promise ? dayDiff(promise, today) : NaN;
+      const status: CollectionStatus = !promise ? "none" : diff < 0 ? "late" : diff === 0 ? "today" : diff <= 3 ? "soon" : "later";
+      return { sale, customer_id: sale.customer_id, due, promise, status, daysLate: diff < 0 ? -diff : 0 };
+    });
+  const rank: Record<CollectionStatus, number> = { late: 0, today: 1, soon: 2, none: 3, later: 4 };
+  items.sort((a, b) => rank[a.status] - rank[b.status] || String(a.promise ?? "9").localeCompare(String(b.promise ?? "9")));
+  const urgent = items.filter((i) => i.status === "late" || i.status === "today");
+  return {
+    items,
+    urgent,
+    urgentTotal: urgent.reduce((a, i) => a + i.due, 0),
+    total: items.reduce((a, i) => a + i.due, 0),
+  };
+}

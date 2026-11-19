@@ -67,6 +67,14 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Tapping a reminder notification opens (or focuses) USAHORA.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => (list.length ? list[0].focus() : self.clients.openWindow("/"))),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;

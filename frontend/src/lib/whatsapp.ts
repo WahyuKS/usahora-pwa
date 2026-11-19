@@ -40,3 +40,9 @@ export function invoiceMessage(inv: Invoice, b: Business | null, reminder: boole
 export function debtReminder(name: string, amount: number, b: Business | null) {
   return `Halo ${name}, kami dari ${b?.name ?? "toko kami"} ingin mengingatkan sisa tagihan belanja Anda sebesar *${rp(amount)}*.${b?.bank_info ? `\n\nPembayaran:\n${b.bank_info}` : ""}\n\nTerima kasih.`;
 }
+
+/** Reminder for one unpaid sale, mentioning the promised date. */
+export function collectionMessage(name: string, saleNumber: string, amount: number, promise: string | null, b: Business | null) {
+  const when = promise ? (promise < dayKey() ? `yang dijanjikan pada ${fmtDate(promise)}` : promise === dayKey() ? "yang dijanjikan hari ini" : `yang dijanjikan pada ${fmtDate(promise)}`) : "";
+  return `Halo ${name}, kami dari ${b?.name ?? "toko kami"} ingin mengingatkan sisa pembayaran belanja *${saleNumber}* sebesar *${rp(amount)}*${when ? ` ${when}` : ""}.${b?.bank_info ? `\n\nPembayaran bisa ke:\n${b.bank_info}` : ""}\n\nTerima kasih.`;
+}

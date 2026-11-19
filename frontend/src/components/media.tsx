@@ -94,7 +94,7 @@ export function BarcodeScanner({ visible, onClose, onScan, title = "Scan barcode
           <View style={{ flex: 1, justifyContent: "center", padding: spacing.xl, gap: spacing.md }}>
             <IconTile name="scan-barcode" size={64} />
             <T v="h2" color={colors.onSurfaceInverse}>Izinkan kamera</T>
-            <T v="body" color={colors.borderStrong}>Kamera dipakai untuk membaca barcode produk agar kasir bisa menambah barang ke keranjang dengan sekali arahkan.</T>
+            <T v="body" color="rgba(255,255,255,0.75)">Kamera dipakai untuk membaca barcode produk agar kasir bisa menambah barang ke keranjang dengan sekali arahkan.</T>
             {perm && !perm.canAskAgain && perm.status === "denied" ? (
               <Button title="Buka Pengaturan" icon="settings" onPress={() => Linking.openSettings()} testID="scanner-open-settings" />
             ) : (

@@ -64,6 +64,8 @@ export function adjustStock(product_id: string, actual: number, note: string) {
 export type CartLine = { product: Product; qty: number; discount: number };
 export function checkout(input: {
   lines: CartLine[]; discount: number; method: PayMethod; received: number; customer_id: string | null; note: string; is_demo?: boolean; created_at?: string;
+  /** Promise-to-pay date for the unpaid part (YYYY-MM-DD). */
+  due_date?: string | null;
 }): Sale {
   must(input.lines.length > 0, "Keranjang masih kosong");
   const st = stockMap(getState());
@@ -78,6 +80,7 @@ export function checkout(input: {
   const total = subtotal - input.discount;
   must(input.received >= 0, "Jumlah uang diterima tidak valid");
   if (!input.customer_id) must(input.received >= total, "Pembayaran kurang. Pilih pelanggan untuk mencatat sebagai piutang.");
+  if (input.due_date) must(DATE_RE.test(input.due_date), "Tanggal janji bayar tidak valid");
   const paid = Math.min(input.received, total);
   const demo = input.is_demo ? { is_demo: true } : {};
   const at = input.created_at ? { created_at: input.created_at } : {};
@@ -85,11 +88,23 @@ export function checkout(input: {
     number: nextNumber("TRX"), customer_id: input.customer_id, items, subtotal, discount: input.discount, total,
     cogs: items.reduce((a, i) => a + i.qty * i.cost, 0), method: input.method, received: input.received,
     change: Math.max(0, input.received - total), note: input.note, cashier_name: actor, ...demo, ...at,
+    due_date: input.received < total ? input.due_date ?? null : null,
   }) as Sale;
   items.forEach((i) => addMovement(i.product_id, "penjualan", -i.qty, `Penjualan ${sale.number}`, sale.id, input.is_demo, input.created_at));
   if (paid > 0) upsert("payments", { sale_id: sale.id, amount: paid, method: input.method, ...demo, ...at }, { silent: true });
   logActivity("sale", `Penjualan ${sale.number} sebesar ${rp(total)}`, input.is_demo);
   return sale;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Change the promise-to-pay date of a sale (the sale record itself stays unchanged). */
+export function setPromiseDate(sale_id: string, date: string | null) {
+  must(!date || DATE_RE.test(date), "Tanggal janji bayar tidak valid");
+  const promises = { ...(getState().meta.promises ?? {}) };
+  if (date) promises[sale_id] = date;
+  else delete promises[sale_id];
+  setMeta({ promises });
 }
 
 export function addSalePayment(sale_id: string, amount: number, method: PayMethod) {

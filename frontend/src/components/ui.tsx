@@ -24,13 +24,13 @@ export const Icon = ({ name, size = 20, color }: { name: IconName; size?: number
 // ---------------- Text ----------------
 type Variant = "display" | "h1" | "h2" | "h3" | "body" | "label" | "caption";
 const VARIANTS: Record<Variant, TextStyle> = {
-  display: { fontSize: fontSize.xxxl, fontFamily: fonts.bold, letterSpacing: -0.6 },
-  h1: { fontSize: fontSize.xxl, fontFamily: fonts.bold, letterSpacing: -0.4 },
-  h2: { fontSize: fontSize.xl, fontFamily: fonts.semibold, letterSpacing: -0.2 },
-  h3: { fontSize: fontSize.lg, fontFamily: fonts.semibold },
-  body: { fontSize: fontSize.base, fontFamily: fonts.regular, lineHeight: 20 },
-  label: { fontSize: fontSize.base, fontFamily: fonts.medium },
-  caption: { fontSize: fontSize.sm, fontFamily: fonts.regular },
+  display: { fontSize: fontSize.xxxl, fontFamily: fonts.bold, letterSpacing: -1.1 },
+  h1: { fontSize: fontSize.xxl, fontFamily: fonts.bold, letterSpacing: -0.8 },
+  h2: { fontSize: fontSize.xl, fontFamily: fonts.semibold, letterSpacing: -0.4 },
+  h3: { fontSize: fontSize.lg, fontFamily: fonts.semibold, letterSpacing: -0.2 },
+  body: { fontSize: fontSize.base, fontFamily: fonts.regular, lineHeight: 21 },
+  label: { fontSize: fontSize.base, fontFamily: fonts.medium, letterSpacing: -0.1 },
+  caption: { fontSize: fontSize.sm, fontFamily: fonts.regular, lineHeight: 17 },
 };
 export function T({ v = "body", color, style, children, numberOfLines, testID, weight, align }: {
   v?: Variant; color?: string; style?: StyleProp<TextStyle>; children: ReactNode; numberOfLines?: number; testID?: string;
@@ -54,7 +54,7 @@ export function Button({ title, onPress, variant = "primary", icon, loading, dis
   loading?: boolean; disabled?: boolean; testID?: string; style?: StyleProp<ViewStyle>; size?: "sm" | "md" | "lg";
 }) {
   const { colors } = useTheme();
-  const bg = { primary: colors.brandPrimary, secondary: colors.brandTertiary, ghost: "transparent", danger: colors.error, outline: colors.surface }[variant];
+  const bg = { primary: colors.brandPrimary, secondary: colors.brandTertiary, ghost: "transparent", danger: colors.error, outline: "transparent" }[variant];
   const fg = { primary: colors.onBrandPrimary, secondary: colors.onBrandTertiary, ghost: colors.brandPrimary, danger: colors.onError, outline: colors.onSurface }[variant];
   const h = { sm: 36, md: 48, lg: 56 }[size];
   return (
@@ -67,15 +67,16 @@ export function Button({ title, onPress, variant = "primary", icon, loading, dis
         onPress();
       }}
       style={({ pressed }) => [
-        { height: h, borderRadius: radius.md, backgroundColor: bg, paddingHorizontal: size === "sm" ? spacing.md : spacing.lg, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
-        variant === "outline" && { borderWidth: 1, borderColor: colors.border },
+        { height: h, borderRadius: size === "sm" ? radius.pill : radius.md, backgroundColor: bg, paddingHorizontal: size === "sm" ? spacing.md : spacing.lg, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
+        variant === "outline" && { borderWidth: 1, borderColor: colors.borderStrong },
+        variant === "primary" && { shadowColor: colors.brandPrimary, shadowOpacity: colors.shadowOpacity ? 0.22 : 0, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
         (disabled || loading) && { opacity: 0.5 },
         pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
         style,
       ]}
     >
       {loading ? <ActivityIndicator color={fg} /> : icon ? <Icon name={icon} size={size === "sm" ? 16 : 18} color={fg} /> : null}
-      <Text style={{ color: fg, fontFamily: fonts.semibold, fontSize: size === "lg" ? fontSize.lg : fontSize.base }} numberOfLines={1}>{title}</Text>
+      <Text style={{ color: fg, fontFamily: fonts.semibold, fontSize: size === "lg" ? fontSize.lg : size === "sm" ? 13 : fontSize.base, letterSpacing: -0.1 }} numberOfLines={1}>{title}</Text>
     </Pressable>
   );
 }
@@ -222,8 +223,8 @@ export function Chips<K extends string>({ options, value, onChange, testIDPrefix
         const active = o.key === value;
         return (
           <Pressable key={o.key} testID={`${testIDPrefix}-${o.key}`} onPress={() => { Haptics.selectionAsync().catch(() => {}); onChange(o.key); }}
-            style={{ height: 36, flexShrink: 0, paddingHorizontal: 14, borderRadius: radius.pill, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.brandPrimary : colors.border, backgroundColor: active ? colors.brandPrimary : colors.surface }}>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: active ? colors.onBrandPrimary : colors.onSurface }}>{o.label}</Text>
+            style={{ height: 36, flexShrink: 0, paddingHorizontal: 15, borderRadius: radius.pill, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.chipActiveBg : colors.border, backgroundColor: active ? colors.chipActiveBg : colors.surface }}>
+            <Text style={{ fontFamily: active ? fonts.semibold : fonts.medium, fontSize: 13, color: active ? colors.chipActiveText : colors.onSurface }}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -240,8 +241,8 @@ export function Segment<K extends string>({ options, value, onChange, testIDPref
         const active = o.key === value;
         return (
           <Pressable key={o.key} testID={`${testIDPrefix}-${o.key}`} onPress={() => onChange(o.key)}
-            style={{ minHeight: 44, paddingHorizontal: spacing.lg, borderRadius: radius.md, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.brandPrimary : colors.border, backgroundColor: active ? colors.brandTertiary : colors.surface }}>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 14, color: active ? colors.brandPrimary : colors.onSurface }}>{o.label}</Text>
+            style={{ minHeight: 42, paddingHorizontal: spacing.lg, borderRadius: radius.pill, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.chipActiveBg : colors.border, backgroundColor: active ? colors.chipActiveBg : colors.surface }}>
+            <Text style={{ fontFamily: active ? fonts.semibold : fonts.medium, fontSize: 14, color: active ? colors.chipActiveText : colors.onSurface }}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -467,7 +468,7 @@ const useStyles = makeStyles((c) => ({
   footer: { backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.divider, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   card: {
     backgroundColor: c.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.lg,
-    shadowColor: c.shadow, shadowOpacity: 0.05, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 2,
+    shadowColor: c.shadow, shadowOpacity: c.shadowOpacity, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: c.shadowOpacity ? 2 : 0,
   },
   inputWrap: { flexDirection: "row", alignItems: "center", height: 48, borderWidth: 1, borderColor: c.border, borderRadius: radius.md, backgroundColor: c.surface, paddingHorizontal: spacing.md },
   // minWidth 0: on web an <input> has an intrinsic width (about 20 characters) and would otherwise

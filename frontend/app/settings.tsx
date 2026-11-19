@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Platform, Pressable, Switch, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
-import { Badge, Button, Card, Divider, Field, ListRow, Screen, SectionTitle, T, useUI } from "@/src/components/ui";
+import { Badge, Button, Card, Divider, Field, ListRow, Screen, SectionTitle, Segment, T, useUI } from "@/src/components/ui";
 import { buildBackup, clearDemo, loadDemo, mergeBackup, restoreBackup, validateBackup } from "@/src/data/actions";
 import { hasDemo } from "@/src/data/selectors";
 import { PhotoPicker } from "@/src/components/media";
@@ -16,7 +16,21 @@ import { resolveConflict, syncNow, useSync } from "@/src/data/sync";
 import type { Business } from "@/src/data/types";
 import { api } from "@/src/lib/api";
 import { fmtDateTime, toNum } from "@/src/lib/format";
-import { spacing, useTheme } from "@/src/theme";
+import { setThemePreference, spacing, useTheme, useThemePreference, type ThemePreference } from "@/src/theme";
+
+const THEME_OPTIONS: { key: ThemePreference; label: string }[] = [
+  { key: "light", label: "Terang" }, { key: "dark", label: "Gelap" }, { key: "system", label: "Ikuti HP" },
+];
+
+function AppearanceCard() {
+  const pref = useThemePreference();
+  return (
+    <Card testID="appearance-card">
+      <T v="caption" style={{ marginBottom: spacing.sm }}>Mode gelap lebih nyaman di mata saat malam dan menghemat baterai di HP dengan layar OLED.</T>
+      <Segment options={THEME_OPTIONS} value={pref} onChange={setThemePreference} testIDPrefix="theme" />
+    </Card>
+  );
+}
 
 const ENTITY_LABEL: Record<string, string> = { products: "Produk", customers: "Pelanggan", suppliers: "Supplier", invoices: "Invoice", bills: "Tagihan", docs: "Dokumen", purchases: "Pembelian", finance: "Keuangan" };
 const STATUS_LABEL = { online: "Online", offline: "Offline — data tersimpan di perangkat", pending: "Menunggu sinkronisasi", syncing: "Sinkronisasi berlangsung", success: "Sinkronisasi berhasil", error: "Sinkronisasi gagal" };
@@ -138,6 +152,8 @@ export default function Settings() {
 
   return (
     <Screen title="Pengaturan" subtitle={isLocal ? "Mode lokal" : user?.email} testID="settings-screen">
+      <SectionTitle title="Tampilan" />
+      <AppearanceCard />
       {isLocal ? (<>
       <SectionTitle title="Penyimpanan data" />
       <Card testID="local-mode-card">

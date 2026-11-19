@@ -9,8 +9,19 @@ import { receiptHtml } from "@/src/lib/docs";
 import { cartProfit, pct } from "@/src/lib/profit";
 import { useAuth } from "@/src/auth";
 import { printHtml, sharePdf } from "@/src/lib/export";
-import { rp, toNum } from "@/src/lib/format";
+import { addDays, dayKey, fmtDate, rp, toNum } from "@/src/lib/format";
+import { saveContact } from "@/src/data/actions";
 import { radius, spacing, useTheme } from "@/src/theme";
+
+type PayMode = "lunas" | "sebagian" | "utang";
+const PAY_MODES: { key: PayMode; label: string }[] = [
+  { key: "lunas", label: "Lunas" }, { key: "sebagian", label: "Bayar sebagian" }, { key: "utang", label: "Belum bayar" },
+];
+const PROMISE_PRESETS: [string, number | "eom"][] = [["Besok", 1], ["3 hari", 3], ["1 minggu", 7], ["2 minggu", 14], ["Akhir bulan", "eom"]];
+const endOfMonth = () => {
+  const d = new Date();
+  return dayKey(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+};
 
 const METHODS: { key: PayMethod; label: string }[] = [
   { key: "tunai", label: "Tunai" }, { key: "transfer", label: "Transfer" }, { key: "qris", label: "QRIS" }, { key: "lainnya", label: "Lainnya" },
@@ -18,31 +29,58 @@ const METHODS: { key: PayMethod; label: string }[] = [
 
 export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customers, onPay }: {
   visible: boolean; onClose: () => void; cart: CartLine[]; setCart: (f: (c: CartLine[]) => CartLine[]) => void; stock: Record<string, number>;
-  customers: Contact[]; onPay: (o: { discount: number; method: PayMethod; received: number; customer_id: string | null; note: string }) => void;
+  customers: Contact[]; onPay: (o: { discount: number; method: PayMethod; received: number; customer_id: string | null; note: string; due_date: string | null }) => void;
 }) {
   const { colors } = useTheme();
   const { toast } = useUI();
   const [discount, setDiscount] = useState("");
   const [method, setMethod] = useState<PayMethod>("tunai");
   const [received, setReceived] = useState("");
+  const [payMode, setPayMode] = useState<PayMode>("lunas");
+  const [paidNow, setPaidNow] = useState("");
+  const [promise, setPromise] = useState(addDays(dayKey(), 7));
   const [customer, setCustomer] = useState<Contact | null>(null);
+  const [newCust, setNewCust] = useState<{ name: string; phone: string } | null>(null);
   const [note, setNote] = useState("");
   const [pick, setPick] = useState(false);
   const [itemDisc, setItemDisc] = useState<string | null>(null);
 
   const subtotal = cart.reduce((a, l) => a + l.qty * l.product.sell_price - l.discount, 0);
   const total = Math.max(0, subtotal - toNum(discount));
-  const rec = method === "tunai" ? toNum(received) : received === "" ? total : toNum(received);
-  const change = Math.max(0, rec - total);
+  // How much the buyer pays now: full (cash counted for change), part of it, or nothing yet.
+  const rec = payMode === "utang" ? 0 : payMode === "sebagian" ? Math.min(toNum(paidNow), total) : method === "tunai" ? toNum(received) : received === "" ? total : toNum(received);
+  const change = payMode === "lunas" ? Math.max(0, rec - total) : 0;
   const short = Math.max(0, total - rec);
+  const debt = payMode !== "lunas" && short > 0;
+  const cashShort = payMode === "lunas" && short > 0;
   const { isOwner } = useAuth();
   const prof = cartProfit(cart, toNum(discount));
 
   useEffect(() => {
     if (!visible) return;
     setReceived("");
+    setPaidNow("");
+    setPayMode("lunas");
+    setPromise(addDays(dayKey(), 7));
+    setNewCust(null);
     setItemDisc(null);
   }, [visible]);
+
+  const save = () => {
+    if (cashShort) return toast(`Uang kurang ${rp(short)}. Pilih "Bayar sebagian" atau "Belum bayar" jika sisanya diutang.`, "error");
+    let cust = customer;
+    if (debt && !cust && newCust) {
+      try {
+        cust = saveContact("customers", { name: newCust.name, phone: newCust.phone });
+        setCustomer(cust);
+      } catch (e: any) {
+        return toast(e.message, "error");
+      }
+    }
+    if (debt && !cust) return toast("Pilih atau tambahkan pelanggan yang berutang", "error");
+    if (debt && !/^\d{4}-\d{2}-\d{2}$/.test(promise)) return toast("Isi tanggal janji bayar (contoh 2026-12-01)", "error");
+    onPay({ discount: toNum(discount), method, received: rec, customer_id: cust?.id ?? null, note, due_date: debt ? promise : null });
+  };
   useEffect(() => {
     if (visible && cart.length === 0) onClose();
   }, [cart.length, visible, onClose]);
@@ -69,8 +107,7 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
               <T v="label" color={prof.profit >= 0 ? colors.success : colors.error} testID="checkout-profit-value">{rp(prof.profit)} · {pct(prof.margin)}</T>
             </View>
           ) : null}
-          <Button title={short > 0 && customer ? `Simpan (piutang ${rp(short)})` : "Simpan penjualan"} icon="circle-check" size="lg" testID="checkout-confirm-button"
-            onPress={() => onPay({ discount: toNum(discount), method, received: rec, customer_id: customer?.id ?? null, note })} />
+          <Button title={debt ? `Simpan · utang ${rp(short)}` : "Simpan penjualan"} icon="circle-check" size="lg" testID="checkout-confirm-button" onPress={save} />
         </View>
       }>
       {cart.map((l, i) => (
@@ -129,28 +166,73 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
           {prof.missingCost ? <T v="caption" color={colors.warningText} style={{ marginTop: spacing.xs }}>{prof.missingCost} produk belum punya harga modal, jadi untung terlihat lebih besar. Lengkapi di menu Produk.</T> : null}
         </View>
       ) : null}
-      <T v="label" style={{ marginBottom: 6 }}>{isOwner ? "Pembayaran dari pembeli" : "Metode pembayaran"}</T>
-      <Segment options={METHODS} value={method} onChange={setMethod} testIDPrefix="checkout-method" />
-      <Field money label={method === "tunai" ? "Uang diterima" : "Jumlah dibayar"} value={received} onChangeText={setReceived} placeholder={method === "tunai" ? "0" : String(total)} testID="checkout-received-input"
-        help={method !== "tunai" ? "Kosongkan bila dibayar penuh" : undefined} />
-      {method === "tunai" ? (
-        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: -spacing.sm, marginBottom: spacing.lg, flexWrap: "wrap" }}>
-          {quick.map((v, i) => <Button key={v} size="sm" variant="outline" title={i === 0 ? "Uang pas" : rp(v)} onPress={() => setReceived(String(v))} testID={`checkout-quick-${i}`} />)}
-        </View>
+      <T v="label" style={{ marginBottom: 6 }}>{isOwner ? "Pembayaran dari pembeli" : "Pembayaran"}</T>
+      <Segment options={PAY_MODES} value={payMode} onChange={setPayMode} testIDPrefix="checkout-paymode" />
+      {payMode !== "utang" ? (
+        <>
+          <T v="caption" style={{ marginBottom: 6 }}>Dibayar dengan</T>
+          <Segment options={METHODS} value={method} onChange={setMethod} testIDPrefix="checkout-method" />
+        </>
       ) : null}
-      <View style={{ backgroundColor: short > 0 ? colors.warningSoft : colors.successSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg, flexDirection: "row", justifyContent: "space-between" }}>
-        <T v="label" color={short > 0 ? colors.warningText : colors.success}>{short > 0 ? "Kurang bayar" : "Kembalian"}</T>
-        <T v="h3" color={short > 0 ? colors.warningText : colors.success} testID="checkout-change">{rp(short > 0 ? short : change)}</T>
-      </View>
-      <T v="label" style={{ marginBottom: 6 }}>Pelanggan {short > 0 ? "(wajib untuk piutang)" : "(opsional)"}</T>
-      <Pressable onPress={() => setPick(true)} testID="checkout-customer-picker" style={{ height: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, gap: spacing.sm, marginBottom: spacing.lg }}>
-        <Icon name="user" size={18} color={colors.muted} />
-        <T v="body" style={{ flex: 1 }} color={customer ? colors.onSurface : colors.muted}>{customer?.name ?? "Pilih pelanggan"}</T>
-        {customer ? <IconButton icon="x" onPress={() => setCustomer(null)} testID="checkout-customer-clear" /> : null}
-      </Pressable>
+      {payMode === "lunas" ? (
+        <>
+          <Field money label={method === "tunai" ? "Uang diterima" : "Jumlah dibayar"} value={received} onChangeText={setReceived} placeholder={method === "tunai" ? "0" : String(total)} testID="checkout-received-input"
+            help={method !== "tunai" ? "Kosongkan bila dibayar penuh" : undefined} />
+          {method === "tunai" ? (
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: -spacing.sm, marginBottom: spacing.lg, flexWrap: "wrap" }}>
+              {quick.map((v, i) => <Button key={v} size="sm" variant="outline" title={i === 0 ? "Uang pas" : rp(v)} onPress={() => setReceived(String(v))} testID={`checkout-quick-${i}`} />)}
+            </View>
+          ) : null}
+        </>
+      ) : null}
+      {payMode === "sebagian" ? (
+        <Field money label="Dibayar sekarang" value={paidNow} onChangeText={setPaidNow} placeholder="0" testID="checkout-paid-now-input" help={`Total ${rp(total)}. Sisanya dicatat sebagai utang pelanggan.`} />
+      ) : null}
+
+      {payMode === "lunas" ? (
+        <View style={{ backgroundColor: cashShort ? colors.warningSoft : colors.successSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg, flexDirection: "row", justifyContent: "space-between" }}>
+          <T v="label" color={cashShort ? colors.warningText : colors.success}>{cashShort ? "Uang kurang" : "Kembalian"}</T>
+          <T v="h3" color={cashShort ? colors.warningText : colors.success} testID="checkout-change">{rp(cashShort ? short : change)}</T>
+        </View>
+      ) : (
+        <View testID="checkout-debt" style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.warning, backgroundColor: colors.warningSoft, padding: spacing.md, marginBottom: spacing.lg }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <T v="label" color={colors.warningText}>Sisa utang pelanggan</T>
+            <T v="h3" color={colors.warningText} testID="checkout-debt-amount">{rp(short)}</T>
+          </View>
+          <T v="caption" color={colors.warningText} style={{ marginTop: 2 }}>Dibayar sekarang {rp(rec)} dari {rp(total)}</T>
+          <View style={{ height: 1, backgroundColor: colors.warning, opacity: 0.3, marginVertical: spacing.md }} />
+          <Field label="Janji bayar tanggal" value={promise} onChangeText={setPromise} placeholder="YYYY-MM-DD" testID="checkout-promise-input"
+            help={/^\d{4}-\d{2}-\d{2}$/.test(promise) ? `${fmtDate(promise)} · pengingat tagihan muncul di Beranda` : "Format: tahun-bulan-tanggal"} />
+          <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap", marginTop: -spacing.sm }}>
+            {PROMISE_PRESETS.map(([label, days]) => {
+              const d = days === "eom" ? endOfMonth() : addDays(dayKey(), days as number);
+              return <Button key={label} size="sm" variant={promise === d ? "primary" : "outline"} title={label} onPress={() => setPromise(d)} testID={`checkout-promise-${label}`} />;
+            })}
+          </View>
+        </View>
+      )}
+
+      <T v="label" style={{ marginBottom: 6 }}>Pelanggan {debt ? "(yang berutang)" : "(opsional)"}</T>
+      {newCust && !customer ? (
+        <View testID="checkout-new-customer" style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg }}>
+          <Field label="Nama pelanggan" value={newCust.name} onChangeText={(name) => setNewCust({ ...newCust, name })} placeholder="Contoh: Bu Sari" testID="checkout-new-customer-name" />
+          <Field label="Nomor WhatsApp" value={newCust.phone} onChangeText={(phone) => setNewCust({ ...newCust, phone })} keyboardType="phone-pad" placeholder="08xxxxxxxxxx" testID="checkout-new-customer-phone" help="Dipakai untuk mengirim pengingat tagihan." />
+          <Button size="sm" variant="ghost" title="Pilih dari daftar pelanggan" onPress={() => { setNewCust(null); setPick(true); }} />
+        </View>
+      ) : (
+        <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg }}>
+          <Pressable onPress={() => setPick(true)} testID="checkout-customer-picker" style={{ flex: 1, height: 48, borderWidth: 1, borderColor: debt && !customer ? colors.warning : colors.border, borderRadius: radius.md, flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, gap: spacing.sm }}>
+            <Icon name="user" size={18} color={colors.muted} />
+            <T v="body" style={{ flex: 1 }} numberOfLines={1} color={customer ? colors.onSurface : colors.muted}>{customer?.name ?? "Pilih pelanggan"}</T>
+            {customer ? <IconButton icon="x" onPress={() => setCustomer(null)} testID="checkout-customer-clear" /> : null}
+          </Pressable>
+          {!customer ? <Button variant="outline" title="Baru" icon="user-plus" onPress={() => setNewCust({ name: "", phone: "" })} testID="checkout-new-customer-button" /> : null}
+        </View>
+      )}
       <Field label="Catatan" value={note} onChangeText={setNote} placeholder="Opsional" testID="checkout-note-input" />
       <PickerSheet visible={pick} onClose={() => setPick(false)} title="Pilih pelanggan" items={customers.filter((c) => !c.archived)} getLabel={(c) => c.name} getSub={(c) => c.phone}
-        onPick={setCustomer} testID="customer-picker" emptyText="Belum ada pelanggan. Tambahkan di menu Pelanggan." />
+        onPick={setCustomer} testID="customer-picker" emptyText="Belum ada pelanggan. Tekan Baru untuk menambahkan." />
     </Sheet>
   );
 }

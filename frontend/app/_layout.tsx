@@ -4,7 +4,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { LogBox, StyleSheet } from "react-native";
+import { LogBox, Platform, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
@@ -14,6 +14,19 @@ import { Loading, Screen, UIProvider } from "@/src/components/ui";
 import { refreshLicense, useLicense } from "@/src/license/state";
 import { LicensePanel } from "@/src/license/ui";
 import { queryClient } from "@/src/query-client";
+import { loadThemePreference, useTheme } from "@/src/theme";
+
+/** Keeps the status bar and (on web) the page background / browser bar colour in sync with the theme. */
+function ThemeChrome() {
+  const { scheme, colors } = useTheme();
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    document.documentElement.style.colorScheme = scheme;
+    document.body.style.backgroundColor = colors.surfaceSecondary;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", scheme === "dark" ? colors.surfaceSecondary : "#2563EB");
+  }, [scheme, colors]);
+  return <StatusBar style={scheme === "dark" ? "light" : "dark"} />;
+}
 
 LogBox.ignoreAllLogs(true);
 
@@ -52,6 +65,9 @@ function Gate() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (Platform.OS !== "web") loadThemePreference().catch(() => {});
+  }, []);
   const [loaded] = useFonts({
     "Inter-Regular": require("../assets/fonts/Inter-Regular.ttf"),
     "Inter-Medium": require("../assets/fonts/Inter-Medium.ttf"),
@@ -64,7 +80,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
-            <StatusBar style="dark" />
+            <ThemeChrome />
             {loaded ? (
               <UIProvider>
                 <AuthProvider>

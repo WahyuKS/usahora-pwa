@@ -12,6 +12,8 @@ export type PayMethod = "tunai" | "transfer" | "qris" | "lainnya";
 export type Sale = Base & {
   number: string; customer_id: string | null; items: SaleItem[]; subtotal: number; discount: number; total: number;
   cogs: number; method: PayMethod; received: number; change: number; note: string; cashier_name?: string;
+  /** Date (YYYY-MM-DD) the customer promised to pay the rest. Later changes are kept in meta.promises. */
+  due_date?: string | null;
 };
 export type Payment = Base & { sale_id: string; amount: number; method: PayMethod };
 export type PurchaseItem = { product_id: string; name: string; qty: number; cost: number };
@@ -50,4 +52,8 @@ export type Conflict = { op: OutboxOp; server: any; server_updated_at: string };
 export type Meta = {
   counters: Record<string, number>; conflicts: Conflict[]; lastSyncAt: string | null; lastPullAt: string | null;
   lastBackupAt: string | null; lastCloudBackupAt: string | null; demo: boolean; onboarded: boolean; businessPending: boolean;
+  /** Updated promise-to-pay dates per sale id (sales themselves are never edited). */
+  promises?: Record<string, string>;
+  /** Day (YYYY-MM-DD) the collection notification was last shown. */
+  lastCollectionNotice?: string;
 };
