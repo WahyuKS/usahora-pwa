@@ -7,7 +7,6 @@ import { useAuth } from "@/src/auth";
 import { BackupReminder } from "@/src/components/backup-reminder";
 import { CollectionsCard } from "@/src/components/collections";
 import { Thumb } from "@/src/components/media";
-import { TrialBanner } from "@/src/license/ui";
 import { Badge, Button, Card, Chips, Divider, EmptyState, Icon, IconTile, ListRow, Logo, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
 import { loadDemo, payBill } from "@/src/data/actions";
 import { billsDue, hasDemo, lowStock, payables, receivables, salesSeries, summary, topProducts } from "@/src/data/selectors";
@@ -120,7 +119,6 @@ export default function Dashboard() {
   return (
     <Screen tab back={false} leading={logo} title={business?.name ?? "USAHORA"} subtitle={`Ringkasan usaha · ${fmtDate(new Date())}`} right={<SyncPill />} testID="dashboard-screen"
       headerExtra={<Chips options={PERIODS.slice(0, 4)} value={period} onChange={setPeriod} testIDPrefix="dashboard-period" style={{ marginHorizontal: -spacing.sm }} />}>
-      <TrialBanner />
       <BackupReminder />
       {isEmpty ? (
         <Card testID="onboarding-card">

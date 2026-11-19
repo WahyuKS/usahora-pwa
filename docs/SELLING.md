@@ -1,19 +1,20 @@
 # Menjual USAHORA (sekali bayar, tanpa langganan)
 
-Panduan untuk penjual: lisensi, masa coba, hosting, dan informasi jujur untuk pembeli.
+Panduan untuk penjual: lisensi, hosting, dan informasi jujur untuk pembeli. Tidak ada masa coba gratis:
+calon pembeli melihat video demo dan screenshot di halaman jualan, lalu membeli.
 
 ## 1. Alur penjualan
 
-1. Pembeli membuka website USAHORA → **masa coba gratis 14 hari** (semua fitur).
-2. Pembeli membayar (Lynk.id, Shopee, transfer, dll.) dan mengirim **ID perangkat** yang tampil di
-   **Lainnya → Lisensi** (contoh `JPZR-MR83-BT38`; ada tombol "Kirim via WhatsApp" berisi pesan siap kirim).
+1. Pembeli membayar (Lynk.id, Shopee, transfer, dll.) dan membuka website USAHORA di HP/laptopnya.
+2. Layar pertama adalah **"Aktifkan USAHORA"** dengan **ID perangkat** (contoh `JPZR-MR83-BT38`) dan tombol
+   **"Kirim via WhatsApp"** (pesan siap kirim berisi ID perangkat). Pembeli mengirim ID itu + bukti bayar.
 3. Anda membuat **kode lisensi untuk ID perangkat itu** (langkah 2) dan mengirimkannya.
-4. Pembeli menempel kode di **Lainnya → Lisensi** (atau di layar "Aktifkan USAHORA" setelah masa coba habis).
+4. Pembeli menempel kode di layar itu → **Aktifkan lisensi** → lalu mengisi nama usaha dan mulai memakai.
 5. Lisensi dicek di perangkat **tanpa internet**, berlaku seumur hidup, tanpa langganan.
    **Kode hanya berlaku di perangkat itu**: jika dibagikan, kode ditolak di perangkat lain.
 
-Setelah masa coba habis tanpa lisensi, aplikasi menampilkan layar aktivasi. **Data pembeli tidak
-dihapus** dan tombol **Ekspor backup data** tetap tersedia.
+Tanpa lisensi aktif, aplikasi tidak bisa dipakai. Jika lisensi di perangkat hilang (mis. data browser
+dihapus), data yang masih ada **tidak dihapus** dan tombol **Simpan cadangan data** tetap tersedia.
 
 ## 2. Membuat kode lisensi
 
@@ -82,7 +83,7 @@ Tanpa variabel itu, aplikasi menulis "Hubungi penjual USAHORA tempat Anda membel
 - **Data saya disimpan di mana?** Di HP/laptop Anda sendiri, tidak dikirim ke server. Karena itu lakukan backup rutin.
 - **Bisa di HP dan laptop?** Bisa dipasang di keduanya, tetapi data tidak sinkron otomatis. Gunakan backup + "Gabungkan dari perangkat lain".
 - **Bisa cetak struk ke printer thermal?** Bisa lewat Chrome di Android/laptop dengan printer Bluetooth BLE 58 mm. Di iPhone gunakan Cetak/PDF.
-- **Coba dulu?** Ya, gratis 14 hari tanpa daftar.
+- **Bisa coba dulu?** Tidak ada versi coba. Lihat video demo dan screenshot di halaman ini; bila ragu, tanyakan lewat WhatsApp.
 
 ## 5. Sebelum mulai menjual (checklist)
 

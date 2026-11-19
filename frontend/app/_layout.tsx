@@ -38,9 +38,8 @@ function Gate() {
   const segments = useSegments();
   const router = useRouter();
   const license = useLicense();
-  // License / trial is checked when the app opens and every 30 minutes (fully offline).
+  // The license is checked when the app opens (before setup) and every 30 minutes (fully offline).
   useEffect(() => {
-    if (status !== "in") return;
     refreshLicense();
     const t = setInterval(() => refreshLicense(), 30 * 60 * 1000);
     return () => clearInterval(t);
@@ -52,9 +51,10 @@ function Gate() {
     if (status === "in" && inAuth) router.replace("/");
     if (status === "in" && !isOwner && OWNER_ROUTES.includes(String(segments[0]))) router.replace("/pos");
   }, [status, segments, router, isOwner]);
-  if (status === "loading") return <Loading />;
-  if (status === "in" && license.kind === "expired") {
-    // Trial ended: the data stays on the device; the user can activate a license or export a backup.
+  if (status === "loading" || license.kind === "loading") return <Loading />;
+  if (license.kind === "unlicensed") {
+    // No free trial: the first screen asks for a license code. Data already on the device stays safe
+    // and can be backed up from this screen.
     return (
       <Screen title="Aktifkan USAHORA" subtitle="Bayar sekali, tanpa langganan" back={false} testID="license-wall">
         <LicensePanel wall />

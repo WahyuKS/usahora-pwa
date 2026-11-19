@@ -9,7 +9,7 @@ USAHORA runs as a website that can be installed on Android, iPhone and desktop (
 - Without a backend URL the web build starts in **local mode**: the user enters a business name and starts working. All data stays in that browser/device.
 - Build: `cd frontend && npx yarn@1.22.22 build:web` → static files in `frontend/dist/` (any HTTPS static host, at the root of a domain).
 - Details, deployment, what was tested and known limits: [docs/WEB-PWA.md](docs/WEB-PWA.md).
-- Selling it (14-day trial, one-time license codes, buyer FAQ): [docs/SELLING.md](docs/SELLING.md).
+- Selling it (one-time license codes per device, no trial, buyer FAQ): [docs/SELLING.md](docs/SELLING.md).
 
 ## Stack (adapted to the Emergent platform)
 The original brief asked for React + Vite + Laravel + MySQL. This platform builds with:

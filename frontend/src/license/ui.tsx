@@ -1,15 +1,13 @@
-import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Linking, Platform, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { Badge, Button, Card, Field, T, useUI } from "@/src/components/ui";
 import { backupMessage, exportBackupNow } from "@/src/data/backup-export";
-import { fmtDate } from "@/src/lib/format";
 import { spacing, useTheme } from "@/src/theme";
 
 import { getDeviceId } from "./device";
-import { activateLicense, PURCHASE_URL, SELLER_WHATSAPP, TRIAL_DAYS, useLicense } from "./state";
+import { activateLicense, PURCHASE_URL, SELLER_WHATSAPP, useLicense } from "./state";
 
 /** Device ID the buyer sends to the seller to receive a code for this device. */
 function DeviceIdBox() {
@@ -29,9 +27,7 @@ function DeviceIdBox() {
       toast("Salin manual: " + id, "info");
     }
   };
-  const message = `Halo, saya ingin aktivasi USAHORA.
-Nama usaha: ${business?.name ?? "-"}
-ID perangkat: ${id}`;
+  const message = `Halo, saya ingin membeli / mengaktifkan lisensi USAHORA.${business?.name ? `\nNama usaha: ${business.name}` : ""}\nID perangkat: ${id}`;
   const wa = `https://wa.me/${SELLER_WHATSAPP}?text=${encodeURIComponent(message)}`;
   return (
     <View testID="device-id-box" style={{ backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: spacing.md, marginBottom: spacing.lg }}>
@@ -46,10 +42,12 @@ ID perangkat: ${id}`;
   );
 }
 
-/** Status + activation form. `wall` = shown full screen after the trial ended. */
+/** Status + activation form. `wall` = shown full screen until a license is active. */
 export function LicensePanel({ wall }: { wall?: boolean }) {
   const lic = useLicense();
-  const { business } = useAuth();
+  const { business, status } = useAuth();
+  // A business is open on this device (e.g. data from an earlier install): offer a backup too.
+  const hasData = status === "in";
   const { colors } = useTheme();
   const { toast } = useUI();
   const [code, setCode] = useState("");
@@ -90,16 +88,11 @@ export function LicensePanel({ wall }: { wall?: boolean }) {
 
   return (
     <Card testID="license-form">
-      {lic.kind === "trial" ? (
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
-          <T v="label">Masa coba gratis</T>
-          <Badge label={`${lic.daysLeft} hari lagi`} tone={lic.daysLeft <= 3 ? "warning" : "brand"} testID="license-trial-badge" />
-        </View>
-      ) : lic.kind === "expired" ? (
-        <T v="label" color={colors.error} style={{ marginBottom: spacing.sm }}>Masa coba {TRIAL_DAYS} hari sudah berakhir</T>
-      ) : null}
-      {lic.kind === "trial" ? <T v="caption" style={{ marginBottom: spacing.md }}>Semua fitur bisa dipakai sampai {fmtDate(lic.endsAt)}. Setelah itu masukkan kode lisensi untuk lanjut. Data Anda tetap aman.</T> : null}
-      {lic.kind === "expired" ? <T v="body" style={{ marginBottom: spacing.md }}>Data Anda tetap aman di perangkat ini. Masukkan kode lisensi untuk lanjut memakai USAHORA, atau simpan cadangan data Anda.</T> : null}
+      <T v="body" style={{ marginBottom: spacing.md }}>
+        {hasData
+          ? "Lisensi di perangkat ini belum aktif. Data Anda tetap aman. Masukkan kode lisensi untuk lanjut, atau simpan cadangan data Anda."
+          : "Untuk mulai memakai USAHORA, kirim ID perangkat di bawah ke penjual bersama bukti pembayaran. Anda akan menerima kode lisensi untuk perangkat ini."}
+      </T>
       <DeviceIdBox />
       <Field label="Kode lisensi" value={code} onChangeText={setCode} placeholder="USAHORA-..." autoCapitalize="none" autoCorrect={false} multiline testID="license-code-input" />
       {error ? <T v="caption" color={colors.error} style={{ marginBottom: spacing.md }} testID="license-error">{error}</T> : null}
@@ -109,24 +102,7 @@ export function LicensePanel({ wall }: { wall?: boolean }) {
       ) : (
         <T v="caption" style={{ marginTop: spacing.sm }}>Belum punya kode? Hubungi penjual USAHORA tempat Anda membeli.</T>
       )}
-      {wall ? <Button title="Simpan cadangan data" icon="download" variant="secondary" style={{ marginTop: spacing.sm }} onPress={backup} testID="license-backup-button" /> : null}
-    </Card>
-  );
-}
-
-/** Small dashboard notice during the trial. */
-export function TrialBanner() {
-  const lic = useLicense();
-  const router = useRouter();
-  const { colors } = useTheme();
-  if (lic.kind !== "trial") return null;
-  return (
-    <Card testID="trial-banner" style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.md, borderColor: lic.daysLeft <= 3 ? colors.warning : colors.border }}>
-      <View style={{ flex: 1 }}>
-        <T v="label">Masa coba: {lic.daysLeft} hari lagi</T>
-        <T v="caption">Aktifkan lisensi sekali bayar agar bisa terus dipakai.</T>
-      </View>
-      <Button size="sm" title="Aktivasi" onPress={() => router.push("/license")} testID="trial-banner-activate" />
+      {wall && hasData ? <Button title="Simpan cadangan data" icon="download" variant="secondary" style={{ marginTop: spacing.sm }} onPress={backup} testID="license-backup-button" /> : null}
     </Card>
   );
 }

@@ -4,7 +4,6 @@
 import { generateKeyPairSync, sign } from "crypto";
 
 import { LICENSE_PUBLIC_KEY } from "@/src/license/public-key";
-import { TRIAL_DAYS, trialState } from "@/src/license/state";
 import { fromB64url, verifyLicense } from "@/src/license/verify";
 
 declare const Buffer: any; // Node global (tests run in Node)
@@ -105,18 +104,20 @@ describe("device ID", () => {
   });
 });
 
-describe("trial", () => {
-  const DAY = 86_400_000;
-  const start = Date.UTC(2026, 10, 1);
-
-  it(`lasts ${TRIAL_DAYS} days`, () => {
-    expect(trialState(start, start, start).daysLeft).toBe(TRIAL_DAYS);
-    expect(trialState(start, start, start + 13.5 * DAY)).toMatchObject({ daysLeft: 1, expired: false });
-    expect(trialState(start, start, start + TRIAL_DAYS * DAY).expired).toBe(true);
-  });
-
-  it("turning the device clock back does not extend the trial", () => {
-    const lastSeen = start + 15 * DAY; // app was opened on day 15 (expired)
-    expect(trialState(start, lastSeen, start + 2 * DAY).expired).toBe(true);
+describe("no free trial: license required from the first open", () => {
+  it("without a code the device is unlicensed; a valid code for this device activates it", async () => {
+    jest.resetModules();
+    jest.doMock("expo-crypto", () => ({ randomUUID: () => require("crypto").randomUUID() }));
+    jest.doMock("@/src/license/public-key", () => ({ LICENSE_PUBLIC_KEY: PUB }));
+    const { refreshLicense, activateLicense } = require("@/src/license/state");
+    const { getDeviceId } = require("@/src/license/device");
+    expect((await refreshLicense()).kind).toBe("unlicensed");
+    const device = await getDeviceId();
+    expect(await activateLicense(issue({ ...good, device: "ZZZZ-YYYY-XXXX" }))).toContain("bukan perangkat ini");
+    expect((await refreshLicense()).kind).toBe("unlicensed");
+    expect(await activateLicense(issue({ ...good, device }))).toBeNull();
+    const st = await refreshLicense();
+    expect(st.kind).toBe("licensed");
+    expect(st.payload.device).toBe(device);
   });
 });
