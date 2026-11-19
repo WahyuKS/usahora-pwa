@@ -44,7 +44,7 @@ export default function More() {
         { title: "Riwayat Aktivitas", sub: "Semua catatan per tanggal", icon: "history", href: "/activities" },
         { title: "Dokumen & SOP", sub: "Template SOP dan checklist", icon: "book-open", href: "/docs" },
         { title: "Pengaturan", sub: "Profil usaha dan cadangan data", icon: "settings", href: "/settings" },
-        ...(isLocal ? [{ title: "Lisensi", sub: "Status masa coba dan aktivasi", icon: "key-round" as IconName, href: "/license" as Href }] : []),
+        ...(isLocal ? [{ title: "Lisensi", sub: "Status lisensi perangkat ini", icon: "key-round" as IconName, href: "/license" as Href }] : []),
       ],
     },
   ];
@@ -81,7 +81,7 @@ export default function More() {
           }} />
       </Card>
       <View style={{ alignItems: "center", marginTop: spacing.xl, gap: spacing.xs }}>
-        <BrandLogo height={26} plate />
+        <BrandLogo height={26} plate align="center" />
         <T v="caption" align="center">Manage smarter. Grow further.</T>
       </View>
     </Screen>

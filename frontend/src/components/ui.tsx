@@ -287,10 +287,10 @@ export function Logo({ size = 40 }: { size?: number; inverse?: boolean }) {
 }
 
 /** Full USAHORA logo (mark + wordmark). The wordmark is navy, so on dark backgrounds use plate. */
-export function BrandLogo({ height = 32, plate }: { height?: number; plate?: boolean }) {
+export function BrandLogo({ height = 32, plate, align = "flex-start" }: { height?: number; plate?: boolean; align?: "flex-start" | "center" }) {
   const img = <Image accessibilityLabel="USAHORA Business Management System" source={LOGO_FULL} style={{ height, width: height * LOGO_FULL_RATIO }} resizeMode="contain" />;
   if (!plate) return img;
-  return <View style={{ alignSelf: "flex-start", backgroundColor: "#FFFFFF", borderRadius: height * 0.4, paddingHorizontal: height * 0.45, paddingVertical: height * 0.3 }}>{img}</View>;
+  return <View style={{ alignSelf: align, backgroundColor: "#FFFFFF", borderRadius: height * 0.4, paddingHorizontal: height * 0.45, paddingVertical: height * 0.3 }}>{img}</View>;
 }
 
 // ---------------- Sync pill ----------------
