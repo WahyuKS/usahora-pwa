@@ -1,29 +1,50 @@
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
-import { useState } from "react";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { Platform, Pressable, Switch, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
-import { Badge, Button, Card, Divider, Field, ListRow, Screen, SectionTitle, T, useUI } from "@/src/components/ui";
-import { buildBackup, clearDemo, loadDemo, restoreBackup, validateBackup } from "@/src/data/actions";
+import { Badge, Button, Card, Divider, Field, Icon, ListRow, Screen, SectionTitle, Segment, T, useUI } from "@/src/components/ui";
+import { buildBackup, clearDemo, loadDemo, mergeBackup, restoreBackup, validateBackup } from "@/src/data/actions";
 import { hasDemo } from "@/src/data/selectors";
-import { PhotoPicker } from "@/src/components/media";
+import { BusinessAvatar } from "@/src/components/media";
 import { StaffSection } from "@/src/components/staff";
-import { setMeta, useDB } from "@/src/data/store";
+import { lastPersistError, setMeta, useDB } from "@/src/data/store";
+import { backupMessage, exportBackupNow, NOT_A_BACKUP } from "@/src/data/backup-export";
+import { storageInfo, type StorageInfo } from "@/src/data/persistence";
 import { resolveConflict, syncNow, useSync } from "@/src/data/sync";
 import type { Business } from "@/src/data/types";
 import { api } from "@/src/lib/api";
-import { shareText } from "@/src/lib/export";
-import { dayKey, fmtDateTime, toNum } from "@/src/lib/format";
-import { spacing, useTheme } from "@/src/theme";
+import { fmtDateTime, toNum } from "@/src/lib/format";
+import { setThemePreference, spacing, useTheme, useThemePreference, type ThemePreference } from "@/src/theme";
+
+const THEME_OPTIONS: { key: ThemePreference; label: string }[] = [
+  { key: "light", label: "Terang" }, { key: "dark", label: "Gelap" }, { key: "system", label: "Ikuti HP" },
+];
+
+function AppearanceCard() {
+  const pref = useThemePreference();
+  return (
+    <Card testID="appearance-card">
+      <T v="caption" style={{ marginBottom: spacing.sm }}>Mode gelap lebih nyaman di mata saat malam dan menghemat baterai di HP dengan layar OLED.</T>
+      <Segment options={THEME_OPTIONS} value={pref} onChange={setThemePreference} testIDPrefix="theme" />
+    </Card>
+  );
+}
 
 const ENTITY_LABEL: Record<string, string> = { products: "Produk", customers: "Pelanggan", suppliers: "Supplier", invoices: "Invoice", bills: "Tagihan", docs: "Dokumen", purchases: "Pembelian", finance: "Keuangan" };
 const STATUS_LABEL = { online: "Online", offline: "Offline — data tersimpan di perangkat", pending: "Menunggu sinkronisasi", syncing: "Sinkronisasi berlangsung", success: "Sinkronisasi berhasil", error: "Sinkronisasi gagal" };
 
 export default function Settings() {
   const db = useDB();
+  const router = useRouter();
   const sync = useSync();
-  const { business, updateBusiness, user, isOwner } = useAuth();
+  const { business, updateBusiness, user, isOwner, isLocal } = useAuth();
+  const [store, setStore] = useState<StorageInfo | null>(null);
+  useEffect(() => {
+    storageInfo().then(setStore).catch(() => setStore(null));
+  }, []);
   const { colors } = useTheme();
   const { toast, confirm } = useUI();
   const [b, setB] = useState<Business>(business ?? ({ name: "", address: "", phone: "", email: "", currency: "IDR", invoice_footer: "", tax_enabled: false, tax_rate: 11, bank_info: "", id: "" } as Business));
@@ -48,36 +69,62 @@ export default function Settings() {
 
   const exportBackup = async () => {
     try {
-      await shareText(JSON.stringify(buildBackup(business), null, 1), `usahora-backup-${dayKey()}.json`, "application/json");
-      setMeta({ lastBackupAt: new Date().toISOString() });
-      toast("Backup berhasil dibuat");
+      const msg = backupMessage(await exportBackupNow(business));
+      if (msg) toast(msg);
     } catch {
-      toast("Gagal membuat backup", "error");
+      toast("Gagal menyimpan cadangan. Coba lagi.", "error");
     }
   };
 
   const doRestore = async (obj: any, source: string) => {
     const err = validateBackup(obj);
     if (err) return toast(err, "error");
-    if (obj.business_id && obj.business_id !== user?.business_id) return toast("Backup ini milik usaha lain dan tidak dapat dipulihkan ke akun ini", "error");
+    const otherDevice = !!obj.business_id && obj.business_id !== user?.business_id;
+    // Cloud accounts: never mix businesses. Local mode: another business id means another device/browser.
+    if (otherDevice && !isLocal) return toast("File cadangan ini milik usaha lain dan tidak dapat dipulihkan ke akun ini", "error");
     const count = ["products", "sales", "customers", "invoices"].map((k) => `${(obj[k] ?? []).length} ${ENTITY_LABEL[k] ?? k}`).join(", ");
-    const ok = await confirm({ title: "Pulihkan data?", message: `Data di perangkat ini akan DIGANTI dengan isi backup ${source} (${count}, dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}). Tindakan ini tidak dapat dibatalkan.`, confirmText: "Pulihkan", danger: true });
+    const from = source === "cloud" ? "cadangan cloud" : "file cadangan";
+    const ok = await confirm({ title: "Pulihkan data?", message: `${otherDevice ? `File ini dari HP/laptop lain ("${obj.business_name ?? "-"}"). ` : ""}Semua data di perangkat ini akan DIGANTI dengan isi ${from} (${count}, dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}). Tindakan ini tidak dapat dibatalkan.`, confirmText: "Pulihkan", danger: true });
     if (!ok) return;
     restoreBackup(obj);
     toast("Data berhasil dipulihkan");
   };
 
+  const readBackupFile = async (): Promise<any | null> => {
+    const res = await DocumentPicker.getDocumentAsync({ type: ["application/json", "*/*"], copyToCacheDirectory: true });
+    if (res.canceled) return null;
+    const uri = res.assets[0].uri;
+    const text = Platform.OS === "web" ? await (await fetch(uri)).text() : await new File(uri).text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      toast(NOT_A_BACKUP, "error");
+      return null;
+    }
+  };
+
+  const mergeFromFile = async () => {
+    try {
+      const obj = await readBackupFile();
+      if (!obj) return;
+      const err = validateBackup(obj);
+      if (err) return toast(err, "error");
+      if (obj.business_id && obj.business_id !== user?.business_id && !isLocal) return toast("File cadangan ini milik usaha lain dan tidak dapat digabungkan ke akun ini", "error");
+      const ok = await confirm({ title: "Gabungkan data?", message: `Data dari file cadangan "${obj.business_name ?? "-"}" (dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}) akan DITAMBAHKAN ke perangkat ini. Data yang sama digabung, versi terbaru dipakai, dan tidak ada data di perangkat ini yang dihapus.`, confirmText: "Gabungkan" });
+      if (!ok) return;
+      const r = mergeBackup(obj);
+      toast(`Selesai: ${r.added} data baru, ${r.updated} diperbarui`);
+    } catch {
+      toast("Gagal membaca file cadangan", "error");
+    }
+  };
+
   const importBackup = async () => {
     try {
-      const res = await DocumentPicker.getDocumentAsync({ type: ["application/json", "*/*"], copyToCacheDirectory: true });
-      if (res.canceled) return;
-      const uri = res.assets[0].uri;
-      const text = Platform.OS === "web" ? await (await fetch(uri)).text() : await new File(uri).text();
-      let obj: any;
-      try { obj = JSON.parse(text); } catch { return toast("File bukan JSON yang valid", "error"); }
-      await doRestore(obj, "file");
+      const obj = await readBackupFile();
+      if (obj) await doRestore(obj, "file");
     } catch {
-      toast("Gagal membaca file backup", "error");
+      toast("Gagal membaca file cadangan", "error");
     }
   };
 
@@ -106,7 +153,22 @@ export default function Settings() {
   };
 
   return (
-    <Screen title="Pengaturan" subtitle={user?.email} testID="settings-screen">
+    <Screen title="Pengaturan" subtitle={isLocal ? "Mode lokal" : user?.email} testID="settings-screen">
+      <SectionTitle title="Tampilan" />
+      <AppearanceCard />
+      {isLocal ? (<>
+      <SectionTitle title="Penyimpanan data" />
+      <Card testID="local-mode-card">
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <T v="label">Mode lokal (tanpa akun)</T>
+          <Badge label={sync.online ? "Online" : "Offline"} tone={sync.online ? "success" : "warning"} />
+        </View>
+        <T v="caption" style={{ marginTop: 4 }}>Semua data tersimpan di perangkat/browser ini dan bisa dipakai tanpa internet. Data tidak dikirim ke server mana pun.</T>
+        {store ? <T v="caption" style={{ marginTop: spacing.sm }} testID="storage-engine-text">{store.engine === "localstorage" ? "Penyimpanan: mode darurat browser (kapasitas kecil). Segera simpan cadangan data." : "Penyimpanan: penyimpanan utama perangkat"}{store.persisted === true ? " · dilindungi dari pembersihan otomatis" : store.persisted === false ? " · pasang USAHORA ke layar utama agar lebih aman" : ""}</T> : null}
+        {lastPersistError ? <T v="caption" color={colors.error} style={{ marginTop: 4 }}>Perubahan terakhir gagal tersimpan ({lastPersistError}). Segera simpan cadangan data.</T> : null}
+        <T v="caption" color={colors.warningText} style={{ marginTop: spacing.sm }}>Penting: jika data browser dihapus, aplikasi di-uninstall, atau ganti HP, data ikut hilang. Simpan cadangan data secara rutin (lihat bagian Cadangan data di bawah).</T>
+      </Card>
+      </>) : (<>
       <SectionTitle title="Sinkronisasi cloud" />
       <Card testID="sync-card">
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -124,6 +186,7 @@ export default function Settings() {
         <Button title="Sinkronkan sekarang" icon="refresh-cw" onPress={doSync} loading={busy === "sync"} style={{ marginTop: spacing.md }} testID="sync-now-button" />
         <T v="caption" style={{ marginTop: spacing.sm }}>Semua data disimpan dulu di perangkat (bisa dipakai offline), lalu dikirim ke cloud dengan kunci unik per perubahan sehingga transaksi tidak tergandakan.</T>
       </Card>
+      </>)}
       {db.meta.conflicts.length ? (
         <>
           <SectionTitle title={`Konflik (${db.meta.conflicts.length})`} />
@@ -145,42 +208,30 @@ export default function Settings() {
 
       {isOwner ? (<>
       <SectionTitle title="Profil usaha" />
-      <Card>
-        <PhotoPicker fileId={b.logo_file_id} label="Logo usaha" testID="business-logo" onChange={async (id) => {
-          const next = { ...b, logo_file_id: id };
-          setB(next);
-          const r = await updateBusiness(next);
-          toast(r === "online" ? "Logo disimpan" : "Logo disimpan di perangkat, dikirim saat online", r === "online" ? "success" : "info");
-        }} />
-        <Field label="Nama usaha *" value={b.name} onChangeText={set("name")} testID="business-name-input" />
-        <Field label="Alamat" value={b.address} onChangeText={set("address")} multiline testID="business-address-input" />
-        <View style={{ flexDirection: "row", gap: spacing.md }}>
-          <View style={{ flex: 1 }}><Field label="Telepon" value={b.phone} onChangeText={set("phone")} keyboardType="phone-pad" testID="business-phone-input" /></View>
-          <View style={{ flex: 1 }}><Field label="Email" value={b.email} onChangeText={set("email")} autoCapitalize="none" keyboardType="email-address" testID="business-email-input" /></View>
+      <Card testID="settings-profile-card" onPress={() => router.push("/profile")} style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+        <BusinessAvatar business={business} size={56} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <T v="h3" numberOfLines={1}>{business?.name ?? "Nama usaha"}</T>
+          <T v="caption" numberOfLines={2}>Logo, alamat, kontak, rekening, dan pajak untuk struk & invoice</T>
         </View>
-        <Field label="Mata uang" value="Rupiah (IDR) · format Rp1.500.000 · zona waktu Asia/Jakarta" editable={false} />
-        <SectionTitle title="Pengaturan invoice" />
-        <Field label="Info pembayaran / rekening" value={b.bank_info} onChangeText={set("bank_info")} multiline placeholder="Contoh: BCA 123456789 a.n. Toko Maju" testID="business-bank-input" />
-        <Field label="Catatan kaki invoice" value={b.invoice_footer} onChangeText={set("invoice_footer")} testID="business-footer-input" />
-        <Pressable onPress={() => set("tax_enabled")(!b.tax_enabled)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", minHeight: 48, marginBottom: spacing.md }}>
-          <T v="label">Pajak aktif secara default</T>
-          <Switch value={b.tax_enabled} onValueChange={set("tax_enabled")} testID="business-tax-switch" trackColor={{ true: colors.brandPrimary, false: colors.borderStrong }} />
-        </Pressable>
-        {b.tax_enabled ? <Field label="Tarif pajak (%)" value={String(b.tax_rate)} onChangeText={set("tax_rate")} keyboardType="decimal-pad" testID="business-taxrate-input" /> : null}
-        <Button title="Simpan profil" icon="check" onPress={saveProfile} loading={busy === "profile"} testID="business-save-button" />
+        <Icon name="chevron-right" size={20} color={colors.muted} />
       </Card>
 
-      <StaffSection />
+      {isLocal ? null : <StaffSection />}
 
-      <SectionTitle title="Backup & restore" />
+      <SectionTitle title="Cadangan data (backup)" />
       <Card testID="backup-card">
-        <T v="caption" testID="last-backup-text">Backup terakhir: {db.meta.lastBackupAt ? fmtDateTime(db.meta.lastBackupAt) : "belum pernah"}{db.meta.lastCloudBackupAt ? ` · cloud ${fmtDateTime(db.meta.lastCloudBackupAt)}` : ""}</T>
+        <T v="body">File cadangan berisi semua data usaha Anda: produk, stok, penjualan, pelanggan, dan keuangan. Simpan file ini di tempat aman, misalnya Google Drive atau kirim ke WhatsApp Anda sendiri.</T>
+        <T v="caption" style={{ marginTop: spacing.sm }} testID="last-backup-text">Cadangan terakhir: {db.meta.lastBackupAt ? fmtDateTime(db.meta.lastBackupAt) : "belum pernah"}{db.meta.lastCloudBackupAt ? ` · cloud ${fmtDateTime(db.meta.lastCloudBackupAt)}` : ""}</T>
         <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
-          <Button title="Ekspor backup JSON" icon="download" variant="secondary" onPress={exportBackup} testID="backup-export-button" />
-          <Button title="Impor backup JSON" icon="upload" variant="outline" onPress={importBackup} testID="backup-import-button" />
-          <Button title="Backup ke cloud" icon="cloud-upload" variant="secondary" onPress={cloudBackup} loading={busy === "cloud"} testID="backup-cloud-button" />
-          <Button title="Pulihkan dari cloud" icon="cloud" variant="outline" onPress={cloudRestore} loading={busy === "cloudr"} testID="backup-cloud-restore-button" />
+          <Button title="Simpan cadangan sekarang" icon="download" onPress={exportBackup} testID="backup-export-button" />
+          <Button title="Pulihkan dari file cadangan" icon="upload" variant="outline" onPress={importBackup} testID="backup-import-button" />
+          <Button title="Gabungkan data dari HP/laptop lain" icon="merge" variant="outline" onPress={mergeFromFile} testID="backup-merge-button" />
+          {isLocal ? null : <Button title="Simpan cadangan ke cloud" icon="cloud-upload" variant="secondary" onPress={cloudBackup} loading={busy === "cloud"} testID="backup-cloud-button" />}
+          {isLocal ? null : <Button title="Pulihkan dari cloud" icon="cloud" variant="outline" onPress={cloudRestore} loading={busy === "cloudr"} testID="backup-cloud-restore-button" />}
         </View>
+        <T v="caption" style={{ marginTop: spacing.md }}>HP hilang atau ganti HP? Buka USAHORA di HP baru, tekan {"\"Pulihkan dari file cadangan\""}, lalu pilih file cadangan terakhir Anda (namanya diawali usahora-cadangan).</T>
+        <T v="caption" style={{ marginTop: spacing.sm }}>Pakai di HP dan laptop sekaligus? Simpan cadangan di satu perangkat, lalu di perangkat lain tekan {"\"Gabungkan data dari HP/laptop lain\""}. Data tidak tersambung otomatis, dan data yang dihapus tidak ikut terhapus di perangkat lain.</T>
         <T v="caption" style={{ marginTop: spacing.sm }}>Catatan: data lokal di perangkat belum dienkripsi khusus. Lindungi perangkat Anda dengan kunci layar.</T>
       </Card>
 
@@ -196,7 +247,7 @@ export default function Settings() {
           }} />
         )}
       </Card>
-      </>) : <T v="caption" style={{ marginTop: spacing.lg }}>Profil usaha, backup, dan akun karyawan hanya dapat diatur oleh pemilik.</T>}
+      </>) : <T v="caption" style={{ marginTop: spacing.lg }}>Profil usaha, cadangan data, dan akun karyawan hanya dapat diatur oleh pemilik.</T>}
       <T v="caption" align="center" style={{ marginTop: spacing.xl }}>USAHORA v1.0 · Business ID {user?.business_id.slice(0, 8)}</T>
     </Screen>
   );

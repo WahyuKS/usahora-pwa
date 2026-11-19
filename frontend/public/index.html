@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>USAHORA — Manajemen Usaha UMKM</title>
+    <meta name="description" content="USAHORA: kasir, stok, pembelian, keuangan, invoice, dan laporan untuk UMKM. Bisa dipasang di HP dan tetap jalan saat offline." />
+    <meta name="theme-color" content="#2563EB" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+
+    <!-- iPhone / iPad: Add to Home Screen -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="USAHORA" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- The `react-native-web` recommended style reset -->
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+        margin: 0;
+        background: #f8fafc;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>Aktifkan JavaScript untuk menjalankan USAHORA.</noscript>
+    <div id="root"></div>
+    <script>
+      // Service worker: makes the app installable and usable offline. Only on HTTPS or localhost.
+      (function () {
+        var secure = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+        if (!("serviceWorker" in navigator) || !secure) return;
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function (e) {
+            console.warn("[USAHORA] Service worker gagal didaftarkan", e);
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

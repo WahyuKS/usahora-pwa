@@ -28,7 +28,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png",
+      "favicon": "./public/icons/icon-512.png",
       "name": "USAHORA",
       "shortName": "USAHORA",
       "themeColor": "#2563EB",

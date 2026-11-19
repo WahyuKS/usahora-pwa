@@ -3,13 +3,14 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import {
-  ActivityIndicator, Animated, Modal, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View,
+  ActivityIndicator, Animated, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View,
   type StyleProp, type TextStyle, type ViewStyle,
 } from "react-native";
 import { KeyboardAvoidingView, KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSync } from "@/src/data/sync";
+import { hasToken } from "@/src/lib/api";
 import { num, toNum } from "@/src/lib/format";
 import { usesNativeTabs } from "@/src/navigation";
 import { fonts, fontSize, makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -23,13 +24,13 @@ export const Icon = ({ name, size = 20, color }: { name: IconName; size?: number
 // ---------------- Text ----------------
 type Variant = "display" | "h1" | "h2" | "h3" | "body" | "label" | "caption";
 const VARIANTS: Record<Variant, TextStyle> = {
-  display: { fontSize: fontSize.xxxl, fontFamily: fonts.bold, letterSpacing: -0.6 },
-  h1: { fontSize: fontSize.xxl, fontFamily: fonts.bold, letterSpacing: -0.4 },
-  h2: { fontSize: fontSize.xl, fontFamily: fonts.semibold, letterSpacing: -0.2 },
-  h3: { fontSize: fontSize.lg, fontFamily: fonts.semibold },
-  body: { fontSize: fontSize.base, fontFamily: fonts.regular, lineHeight: 20 },
-  label: { fontSize: fontSize.base, fontFamily: fonts.medium },
-  caption: { fontSize: fontSize.sm, fontFamily: fonts.regular },
+  display: { fontSize: fontSize.xxxl, fontFamily: fonts.bold, letterSpacing: -1.1 },
+  h1: { fontSize: fontSize.xxl, fontFamily: fonts.bold, letterSpacing: -0.8 },
+  h2: { fontSize: fontSize.xl, fontFamily: fonts.semibold, letterSpacing: -0.4 },
+  h3: { fontSize: fontSize.lg, fontFamily: fonts.semibold, letterSpacing: -0.2 },
+  body: { fontSize: fontSize.base, fontFamily: fonts.regular, lineHeight: 21 },
+  label: { fontSize: fontSize.base, fontFamily: fonts.medium, letterSpacing: -0.1 },
+  caption: { fontSize: fontSize.sm, fontFamily: fonts.regular, lineHeight: 17 },
 };
 export function T({ v = "body", color, style, children, numberOfLines, testID, weight, align }: {
   v?: Variant; color?: string; style?: StyleProp<TextStyle>; children: ReactNode; numberOfLines?: number; testID?: string;
@@ -53,7 +54,7 @@ export function Button({ title, onPress, variant = "primary", icon, loading, dis
   loading?: boolean; disabled?: boolean; testID?: string; style?: StyleProp<ViewStyle>; size?: "sm" | "md" | "lg";
 }) {
   const { colors } = useTheme();
-  const bg = { primary: colors.brandPrimary, secondary: colors.brandTertiary, ghost: "transparent", danger: colors.error, outline: colors.surface }[variant];
+  const bg = { primary: colors.brandPrimary, secondary: colors.brandTertiary, ghost: "transparent", danger: colors.error, outline: "transparent" }[variant];
   const fg = { primary: colors.onBrandPrimary, secondary: colors.onBrandTertiary, ghost: colors.brandPrimary, danger: colors.onError, outline: colors.onSurface }[variant];
   const h = { sm: 36, md: 48, lg: 56 }[size];
   return (
@@ -66,15 +67,16 @@ export function Button({ title, onPress, variant = "primary", icon, loading, dis
         onPress();
       }}
       style={({ pressed }) => [
-        { height: h, borderRadius: radius.md, backgroundColor: bg, paddingHorizontal: size === "sm" ? spacing.md : spacing.lg, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
-        variant === "outline" && { borderWidth: 1, borderColor: colors.border },
+        { height: h, borderRadius: size === "sm" ? radius.pill : radius.md, backgroundColor: bg, paddingHorizontal: size === "sm" ? spacing.md : spacing.lg, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
+        variant === "outline" && { borderWidth: 1, borderColor: colors.borderStrong },
+        variant === "primary" && { shadowColor: colors.brandPrimary, shadowOpacity: colors.shadowOpacity ? 0.22 : 0, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
         (disabled || loading) && { opacity: 0.5 },
         pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
         style,
       ]}
     >
       {loading ? <ActivityIndicator color={fg} /> : icon ? <Icon name={icon} size={size === "sm" ? 16 : 18} color={fg} /> : null}
-      <Text style={{ color: fg, fontFamily: fonts.semibold, fontSize: size === "lg" ? fontSize.lg : fontSize.base }} numberOfLines={1}>{title}</Text>
+      <Text style={{ color: fg, fontFamily: fonts.semibold, fontSize: size === "lg" ? fontSize.lg : size === "sm" ? 13 : fontSize.base, letterSpacing: -0.1 }} numberOfLines={1}>{title}</Text>
     </Pressable>
   );
 }
@@ -114,15 +116,15 @@ export function IconTile({ name, tone = "brand", size = 40 }: { name: IconName; 
   );
 }
 
-export function ListRow({ icon, tone, title, subtitle, right, rightSub, onPress, testID }: {
-  icon?: IconName; tone?: ComponentProps<typeof IconTile>["tone"]; title: string; subtitle?: string; right?: string; rightSub?: ReactNode; onPress?: () => void; testID?: string;
+export function ListRow({ icon, tone, title, subtitle, right, rightSub, onPress, testID, titleLines = 1 }: {
+  titleLines?: number; icon?: IconName; tone?: ComponentProps<typeof IconTile>["tone"]; title: string; subtitle?: string; right?: string; rightSub?: ReactNode; onPress?: () => void; testID?: string;
 }) {
   const { colors } = useTheme();
   return (
     <Pressable testID={testID} disabled={!onPress} onPress={onPress} style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md, minHeight: 56 }, pressed && { opacity: 0.7 }]}>
       {icon ? <IconTile name={icon} tone={tone} /> : null}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <T v="label" numberOfLines={1}>{title}</T>
+        <T v="label" numberOfLines={titleLines}>{title}</T>
         {subtitle ? <T v="caption" numberOfLines={1} style={{ marginTop: 2 }}>{subtitle}</T> : null}
       </View>
       {right !== undefined || rightSub ? (
@@ -221,8 +223,8 @@ export function Chips<K extends string>({ options, value, onChange, testIDPrefix
         const active = o.key === value;
         return (
           <Pressable key={o.key} testID={`${testIDPrefix}-${o.key}`} onPress={() => { Haptics.selectionAsync().catch(() => {}); onChange(o.key); }}
-            style={{ height: 36, flexShrink: 0, paddingHorizontal: 14, borderRadius: radius.pill, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.brandPrimary : colors.border, backgroundColor: active ? colors.brandPrimary : colors.surface }}>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: active ? colors.onBrandPrimary : colors.onSurface }}>{o.label}</Text>
+            style={{ height: 36, flexShrink: 0, paddingHorizontal: 15, borderRadius: radius.pill, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.chipActiveBg : colors.border, backgroundColor: active ? colors.chipActiveBg : colors.surface }}>
+            <Text style={{ fontFamily: active ? fonts.semibold : fonts.medium, fontSize: 13, color: active ? colors.chipActiveText : colors.onSurface }}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -239,8 +241,8 @@ export function Segment<K extends string>({ options, value, onChange, testIDPref
         const active = o.key === value;
         return (
           <Pressable key={o.key} testID={`${testIDPrefix}-${o.key}`} onPress={() => onChange(o.key)}
-            style={{ minHeight: 44, paddingHorizontal: spacing.lg, borderRadius: radius.md, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.brandPrimary : colors.border, backgroundColor: active ? colors.brandTertiary : colors.surface }}>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 14, color: active ? colors.brandPrimary : colors.onSurface }}>{o.label}</Text>
+            style={{ minHeight: 42, paddingHorizontal: spacing.lg, borderRadius: radius.pill, justifyContent: "center", borderWidth: 1, borderColor: active ? colors.chipActiveBg : colors.border, backgroundColor: active ? colors.chipActiveBg : colors.surface }}>
+            <Text style={{ fontFamily: active ? fonts.semibold : fonts.medium, fontSize: 14, color: active ? colors.chipActiveText : colors.onSurface }}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -270,17 +272,25 @@ export function Loading() {
 }
 
 // ---------------- Logo ----------------
-export function Logo({ size = 40, inverse }: { size?: number; inverse?: boolean }) {
-  const { colors } = useTheme();
-  const bar = inverse ? colors.brandPrimary : colors.onBrandPrimary;
-  const w = size * 0.13;
+// Official USAHORA logo (generated from assets/brand/usahora-logo-source.png by scripts/generate-pwa-icons.js).
+const LOGO_MARK = require("../../assets/brand/usahora-mark.png");
+const LOGO_FULL = require("../../assets/brand/usahora-logo.png");
+const LOGO_FULL_RATIO = 406 / 148;
+
+/** USAHORA shield mark on a white tile: readable on light and dark backgrounds. */
+export function Logo({ size = 40 }: { size?: number; inverse?: boolean }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size * 0.28, backgroundColor: inverse ? colors.surface : colors.brandPrimary, alignItems: "flex-end", justifyContent: "center", flexDirection: "row", gap: w * 0.7, paddingBottom: size * 0.24 }}>
-      {[0.28, 0.44, 0.6].map((h, i) => (
-        <View key={i} style={{ width: w, height: size * h, borderRadius: w / 2, backgroundColor: bar, opacity: 0.55 + i * 0.22 }} />
-      ))}
+    <View accessibilityLabel="USAHORA" style={{ width: size, height: size, borderRadius: size * 0.28, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(10,15,30,0.06)" }}>
+      <Image source={LOGO_MARK} style={{ width: size * 0.74, height: size * 0.74 }} resizeMode="contain" />
     </View>
   );
+}
+
+/** Full USAHORA logo (mark + wordmark). The wordmark is navy, so on dark backgrounds use plate. */
+export function BrandLogo({ height = 32, plate, align = "flex-start" }: { height?: number; plate?: boolean; align?: "flex-start" | "center" }) {
+  const img = <Image accessibilityLabel="USAHORA Business Management System" source={LOGO_FULL} style={{ height, width: height * LOGO_FULL_RATIO }} resizeMode="contain" />;
+  if (!plate) return img;
+  return <View style={{ alignSelf: align, backgroundColor: "#FFFFFF", borderRadius: height * 0.4, paddingHorizontal: height * 0.45, paddingVertical: height * 0.3 }}>{img}</View>;
 }
 
 // ---------------- Sync pill ----------------
@@ -289,10 +299,12 @@ export function SyncPill() {
   const { status } = useSync();
   const router = useRouter();
   const { colors } = useTheme();
-  const [label, icon] = SYNC_LABEL[status];
+  // Local mode (no cloud account): nothing is synced, so show where the data lives instead.
+  const local = !hasToken();
+  const [label, icon] = local ? (status === "offline" ? ["Offline · lokal", "wifi-off"] : ["Data lokal", "hard-drive"]) : SYNC_LABEL[status];
   const { width } = useWindowDimensions();
   const compact = width < 420;
-  const tone = status === "offline" || status === "error" ? [colors.warningSoft, colors.warningText] : status === "success" ? [colors.successSoft, colors.success] : [colors.brandTertiary, colors.brandPrimary];
+  const tone = local ? [colors.brandTertiary, colors.brandPrimary] : status === "offline" || status === "error" ? [colors.warningSoft, colors.warningText] : status === "success" ? [colors.successSoft, colors.success] : [colors.brandTertiary, colors.brandPrimary];
   return (
     <Pressable testID="sync-status-pill" accessibilityLabel={label} onPress={() => router.push("/settings")} style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 32, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: tone[0] }}>
       <Icon name={icon as IconName} size={14} color={tone[1]} />
@@ -458,16 +470,18 @@ export function useRun() {
 
 const useStyles = makeStyles((c) => ({
   screen: { flex: 1, backgroundColor: c.surfaceSecondary },
-  header: { backgroundColor: c.surface, borderBottomWidth: 1, borderBottomColor: c.border, paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
+  header: { backgroundColor: c.surfaceSecondary, paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, minHeight: 48, paddingHorizontal: spacing.xs },
   maxw: { width: "100%", maxWidth: 1040, alignSelf: "center" },
-  footer: { backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.border, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  footer: { backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.divider, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   card: {
     backgroundColor: c.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.lg,
-    shadowColor: c.shadow, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    shadowColor: c.shadow, shadowOpacity: c.shadowOpacity, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: c.shadowOpacity ? 2 : 0,
   },
   inputWrap: { flexDirection: "row", alignItems: "center", height: 48, borderWidth: 1, borderColor: c.border, borderRadius: radius.md, backgroundColor: c.surface, paddingHorizontal: spacing.md },
-  input: { flex: 1, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}) },
+  // minWidth 0: on web an <input> has an intrinsic width (about 20 characters) and would otherwise
+  // overflow its box in half-width fields on small phones.
+  input: { flex: 1, minWidth: 0, fontFamily: fonts.regular, fontSize: 15, color: c.onSurface, ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}) },
   overlay: { flex: 1, backgroundColor: c.overlay },
   sheet: { backgroundColor: c.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, paddingTop: spacing.sm, width: "100%", maxWidth: 640, alignSelf: "center" },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: c.borderStrong, alignSelf: "center", marginBottom: spacing.sm },

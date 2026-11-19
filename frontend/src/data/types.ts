@@ -3,7 +3,12 @@ export type Base = { id: string; business_id?: string; created_at: string; updat
 export type Product = Base & {
   name: string; sku: string; barcode: string; category: string; description: string;
   cost_price: number; sell_price: number; min_stock: number; unit: string; archived: boolean; photo_file_id?: string | null;
+  /** "barang" (default) uses stock; "jasa" = service or rental (kost room, per night, per job): no stock. */
+  kind?: ProductKind;
 };
+export type ProductKind = "barang" | "jasa";
+/** True for physical goods; services and rentals never run out of stock. */
+export const tracksStock = (p: { kind?: ProductKind }) => p.kind !== "jasa";
 export type MovementType = "awal" | "masuk" | "keluar" | "penyesuaian" | "penjualan" | "pembelian";
 export type StockMovement = Base & { product_id: string; type: MovementType; qty: number; note: string; ref_id?: string };
 export type Contact = Base & { name: string; phone: string; email: string; address: string; notes: string; archived?: boolean };
@@ -12,6 +17,8 @@ export type PayMethod = "tunai" | "transfer" | "qris" | "lainnya";
 export type Sale = Base & {
   number: string; customer_id: string | null; items: SaleItem[]; subtotal: number; discount: number; total: number;
   cogs: number; method: PayMethod; received: number; change: number; note: string; cashier_name?: string;
+  /** Date (YYYY-MM-DD) the customer promised to pay the rest. Later changes are kept in meta.promises. */
+  due_date?: string | null;
 };
 export type Payment = Base & { sale_id: string; amount: number; method: PayMethod };
 export type PurchaseItem = { product_id: string; name: string; qty: number; cost: number };
@@ -38,6 +45,8 @@ export type Activity = Base & { type: string; message: string };
 export type Business = {
   id: string; name: string; address: string; phone: string; email: string; currency: string;
   invoice_footer: string; tax_enabled: boolean; tax_rate: number; bank_info: string; logo_file_id?: string | null;
+  /** Logo picked from the device, stored offline as a small data URL (shown in the app and on receipts/invoices/reports). */
+  logo_data_url?: string | null;
 };
 export type Role = "owner" | "cashier";
 export type User = { id: string; name: string; email: string; business_id: string; role?: Role };
@@ -50,4 +59,8 @@ export type Conflict = { op: OutboxOp; server: any; server_updated_at: string };
 export type Meta = {
   counters: Record<string, number>; conflicts: Conflict[]; lastSyncAt: string | null; lastPullAt: string | null;
   lastBackupAt: string | null; lastCloudBackupAt: string | null; demo: boolean; onboarded: boolean; businessPending: boolean;
+  /** Updated promise-to-pay dates per sale id (sales themselves are never edited). */
+  promises?: Record<string, string>;
+  /** Day (YYYY-MM-DD) the collection notification was last shown. */
+  lastCollectionNotice?: string;
 };

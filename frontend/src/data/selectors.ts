@@ -1,6 +1,6 @@
-import { addDays, addMonths, dayKey, inRange, rangeOf, type Period } from "@/src/lib/format";
+import { addDays, addMonths, dayKey, inRange, isCustomPeriod, periodDays, rangeOf, type Period } from "@/src/lib/format";
 import type { DBState } from "./store";
-import type { Bill, FinanceEntry, Invoice, Product, Purchase, Sale } from "./types";
+import { tracksStock, type Bill, type FinanceEntry, type Invoice, type Product, type Purchase, type Sale } from "./types";
 
 export function stockMap(s: DBState): Record<string, number> {
   const m: Record<string, number> = {};
@@ -69,26 +69,29 @@ export function topProducts(s: DBState, period: Period, limit = 5) {
 export function lowStock(s: DBState) {
   const st = stockMap(s);
   return (s.products as Product[])
-    .filter((p) => !p.archived && (st[p.id] ?? 0) <= p.min_stock)
+    .filter((p) => !p.archived && tracksStock(p) && (st[p.id] ?? 0) <= p.min_stock)
     .map((p) => ({ p, stock: st[p.id] ?? 0 }));
 }
 
 export function inventoryValue(s: DBState) {
   const st = stockMap(s);
-  return (s.products as Product[]).filter((p) => !p.archived).reduce((a, p) => a + Math.max(0, st[p.id] ?? 0) * p.cost_price, 0);
+  return (s.products as Product[]).filter((p) => !p.archived && tracksStock(p)).reduce((a, p) => a + Math.max(0, st[p.id] ?? 0) * p.cost_price, 0);
 }
 
 /** Sales chart buckets: per day for short periods, per month for the year. */
 export function salesSeries(s: DBState, period: Period) {
   const r = rangeOf(period);
-  const byMonth = period === "year" || period === "all";
+  const custom = isCustomPeriod(period);
+  const byMonth = period === "year" || period === "all" || (custom && periodDays(period) > 62);
+  const lastKey = custom ? (period.to < dayKey() ? period.to : dayKey()) : dayKey();
   const buckets: { key: string; value: number }[] = [];
   if (byMonth) {
-    const startKey = period === "all" ? addMonths(dayKey(), -11).slice(0, 7) + "-01" : dayKey(r.start).slice(0, 4) + "-01-01";
-    for (let k = startKey; k <= dayKey(); k = addMonths(k, 1)) buckets.push({ key: k.slice(0, 7), value: 0 });
+    const startKey = custom ? period.from.slice(0, 7) + "-01" : period === "all" ? addMonths(dayKey(), -11).slice(0, 7) + "-01" : dayKey(r.start).slice(0, 4) + "-01-01";
+    for (let k = startKey; k <= lastKey; k = addMonths(k, 1)) buckets.push({ key: k.slice(0, 7), value: 0 });
   } else {
-    const start = period === "today" ? addDays(dayKey(), -6) : dayKey(r.start);
-    for (let k = start; k <= dayKey(); k = addDays(k, 1)) buckets.push({ key: k, value: 0 });
+    // A single day still shows the week up to it, so the chart has context.
+    const start = period === "today" ? addDays(dayKey(), -6) : custom && period.from === period.to ? addDays(period.from, -6) : dayKey(r.start);
+    for (let k = start; k <= (custom ? period.to : lastKey); k = addDays(k, 1)) buckets.push({ key: k, value: 0 });
   }
   const idx = new Map(buckets.map((b, i) => [b.key, i]));
   for (const sale of s.sales as Sale[]) {
@@ -106,3 +109,33 @@ export function billsDue(s: DBState, withinDays = 3) {
 
 /** Demo mode is derived from the records themselves so it survives sync to other devices. */
 export const hasDemo = (s: DBState) => (["products", "sales", "customers", "finance", "invoices", "bills"] as const).some((e) => s[e].some((r: any) => r.is_demo));
+
+// ---------------- Collections (piutang to chase) ----------------
+export type CollectionStatus = "late" | "today" | "soon" | "later" | "none";
+export type CollectionItem = { sale: Sale; customer_id: string | null; due: number; promise: string | null; status: CollectionStatus; daysLate: number };
+
+const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
+
+/** Unpaid sales with their promise-to-pay date. "soon" = within 3 days. Late ones first (oldest first). */
+export function collections(s: DBState, today = dayKey()) {
+  const paid = paidMap(s);
+  const promises = s.meta.promises ?? {};
+  const items: CollectionItem[] = (s.sales as Sale[])
+    .map((sale) => ({ sale, due: Math.max(0, sale.total - (paid[sale.id] ?? 0)) }))
+    .filter((x) => x.due > 0)
+    .map(({ sale, due }) => {
+      const promise = promises[sale.id] ?? sale.due_date ?? null;
+      const diff = promise ? dayDiff(promise, today) : NaN;
+      const status: CollectionStatus = !promise ? "none" : diff < 0 ? "late" : diff === 0 ? "today" : diff <= 3 ? "soon" : "later";
+      return { sale, customer_id: sale.customer_id, due, promise, status, daysLate: diff < 0 ? -diff : 0 };
+    });
+  const rank: Record<CollectionStatus, number> = { late: 0, today: 1, soon: 2, none: 3, later: 4 };
+  items.sort((a, b) => rank[a.status] - rank[b.status] || String(a.promise ?? "9").localeCompare(String(b.promise ?? "9")));
+  const urgent = items.filter((i) => i.status === "late" || i.status === "today");
+  return {
+    items,
+    urgent,
+    urgentTotal: urgent.reduce((a, i) => a + i.due, 0),
+    total: items.reduce((a, i) => a + i.due, 0),
+  };
+}

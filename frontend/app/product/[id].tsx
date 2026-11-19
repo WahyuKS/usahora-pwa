@@ -8,7 +8,7 @@ import { Badge, Button, Card, Divider, EmptyState, Field, IconButton, ListRow, S
 import { adjustStock, archiveProduct, stockInOut } from "@/src/data/actions";
 import { stockMap } from "@/src/data/selectors";
 import { useDB } from "@/src/data/store";
-import type { Product, StockMovement } from "@/src/data/types";
+import { tracksStock, type Product, type StockMovement } from "@/src/data/types";
 import { fmtDateTime, pct, rp, toNum } from "@/src/lib/format";
 import { spacing, useTheme } from "@/src/theme";
 
@@ -16,14 +16,14 @@ const TYPE_LABEL: Record<string, string> = { awal: "Stok awal", masuk: "Stok mas
 type Mode = "masuk" | "keluar" | "penyesuaian";
 
 export default function ProductDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, stock: openStock } = useLocalSearchParams<{ id: string; stock?: string }>();
   const db = useDB();
   const router = useRouter();
   const { colors } = useTheme();
   const { confirm } = useUI();
   const run = useRun();
   const { isOwner } = useAuth();
-  const [mode, setMode] = useState<Mode | null>(null);
+  const [mode, setMode] = useState<Mode | null>(openStock === "masuk" ? "masuk" : null);
   const [qty, setQty] = useState("");
   const [note, setNote] = useState("");
   const p: Product | undefined = db.products.find((x: Product) => x.id === id);
@@ -47,7 +47,12 @@ export default function ProductDetail() {
       right={isOwner && <IconButton icon="pencil" onPress={() => router.push({ pathname: "/product-form", params: { id: p.id } })} testID="product-edit-button" label="Edit" />}>
       {p.archived ? <View style={{ marginBottom: spacing.md }}><Badge label="Diarsipkan — tidak tampil di kasir" tone="neutral" /></View> : null}
       {p.photo_file_id ? <View style={{ marginBottom: spacing.md }}><Thumb fileId={p.photo_file_id} size={120} /></View> : null}
-      <Card>
+      {!tracksStock(p) ? (
+        <Card testID="product-service-card">
+          <Badge label={`Jasa / sewa · per ${p.unit}`} tone="brand" />
+          <T v="body" style={{ marginTop: spacing.sm }}>Tidak memakai stok, jadi selalu bisa dijual. Cocok untuk sewa kamar, sewa per malam, atau jasa.</T>
+        </Card>
+      ) : <Card>
         <T v="caption">Stok saat ini</T>
         <T v="display" testID="product-stock-value" color={stock <= p.min_stock ? colors.warningText : colors.onSurface}>{stock} <T v="h3" color={colors.muted}>{p.unit}</T></T>
         <T v="caption">Minimum {p.min_stock} {p.unit} · Nilai {rp(Math.max(0, stock) * p.cost_price)}</T>
@@ -56,7 +61,7 @@ export default function ProductDetail() {
           <Button title="Keluar" variant="secondary" style={{ flex: 1 }} onPress={() => setMode("keluar")} testID="stock-out-button" />
           <Button title="Opname" variant="secondary" style={{ flex: 1 }} onPress={() => setMode("penyesuaian")} testID="stock-adjust-button" />
         </View> : null}
-      </Card>
+      </Card>}
       <Card style={{ marginTop: spacing.md }}>
         <ListRow title="Harga jual" right={rp(p.sell_price)} />
         <Divider />
@@ -68,8 +73,8 @@ export default function ProductDetail() {
         {p.description ? <><Divider /><T v="body" style={{ paddingVertical: spacing.md }}>{p.description}</T></> : null}
       </Card>
 
-      <SectionTitle title="Riwayat pergerakan stok" />
-      <Card style={{ paddingVertical: spacing.xs }} testID="stock-movements-list">
+      {tracksStock(p) ? <SectionTitle title="Riwayat pergerakan stok" /> : null}
+      {tracksStock(p) ? <Card style={{ paddingVertical: spacing.xs }} testID="stock-movements-list">
         {moves.length === 0 ? <T v="caption" style={{ paddingVertical: spacing.md }}>Belum ada pergerakan stok.</T> : moves.slice(0, 100).map((m, i) => (
           <View key={m.id}>
             {i ? <Divider /> : null}
@@ -77,7 +82,7 @@ export default function ProductDetail() {
               rightSub={<T v="label" weight="bold" color={m.qty > 0 ? colors.success : colors.error}>{m.qty > 0 ? `+${m.qty}` : m.qty}</T>} />
           </View>
         ))}
-      </Card>
+      </Card> : null}
 
       {isOwner && <Button title={p.archived ? "Aktifkan kembali" : "Arsipkan produk"} variant="ghost" icon="archive" style={{ marginTop: spacing.xl }} testID="product-archive-button"
         onPress={async () => {

@@ -4,12 +4,14 @@ import { View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { Badge, Button, Card, Divider, EmptyState, Field, ListRow, Screen, SectionTitle, Segment, Sheet, T, useRun, useUI } from "@/src/components/ui";
-import { addSalePayment } from "@/src/data/actions";
+import { addSalePayment, setPromiseDate } from "@/src/data/actions";
 import { useDB } from "@/src/data/store";
 import type { PayMethod, Payment, Sale } from "@/src/data/types";
+import { BluetoothPrintButton } from "@/src/components/bt-print-button";
 import { methodLabel, receiptHtml } from "@/src/lib/docs";
 import { printHtml, sharePdf } from "@/src/lib/export";
-import { fmtDateTime, rp, toNum } from "@/src/lib/format";
+import { fmtDate, fmtDateTime, rp, toNum } from "@/src/lib/format";
+import { collectionMessage, openWhatsApp } from "@/src/lib/whatsapp";
 import { spacing, useTheme } from "@/src/theme";
 
 export default function SaleDetail() {
@@ -22,12 +24,15 @@ export default function SaleDetail() {
   const [payOpen, setPayOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PayMethod>("tunai");
+  const [promiseOpen, setPromiseOpen] = useState(false);
+  const [promiseInput, setPromiseInput] = useState("");
   const sale: Sale | undefined = db.sales.find((s: Sale) => s.id === id);
   if (!sale) return <Screen title="Transaksi"><EmptyState icon="receipt" title="Transaksi tidak ditemukan" message="Data mungkin belum tersinkron." /></Screen>;
   const payments: Payment[] = db.payments.filter((p: Payment) => p.sale_id === id);
   const paid = payments.reduce((a, p) => a + p.amount, 0);
   const due = Math.max(0, sale.total - paid);
   const customer = db.customers.find((c: any) => c.id === sale.customer_id);
+  const promise: string | null = db.meta.promises?.[sale.id] ?? sale.due_date ?? null;
   const h = () => receiptHtml(sale, business, customer, paid);
   const safe = async (fn: () => Promise<unknown>) => {
     try { await fn(); } catch { toast("Gagal membuka dokumen", "error"); }
@@ -64,13 +69,33 @@ export default function SaleDetail() {
           <View key={p.id}>{i ? <Divider /> : null}<ListRow title={methodLabel(p.method)} subtitle={fmtDateTime(p.created_at)} right={rp(p.amount)} /></View>
         ))}
       </Card>
-      {due ? <Button title="Catat pelunasan" icon="hand-coins" style={{ marginTop: spacing.md }} onPress={() => { setAmount(String(due)); setPayOpen(true); }} testID="sale-add-payment-button" /> : null}
+      {due ? (
+        <Card testID="sale-debt-card" style={{ marginTop: spacing.md, borderColor: colors.warning }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <T v="label" color={colors.warningText}>Sisa utang</T>
+            <T v="h3" color={colors.warningText}>{rp(due)}</T>
+          </View>
+          <T v="caption" style={{ marginTop: 2 }} testID="sale-promise-text">{promise ? `Janji bayar ${fmtDate(promise)}` : "Belum ada janji bayar"}{customer ? ` · ${customer.name}` : ""}</T>
+          <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md, flexWrap: "wrap" }}>
+            <Button title="Catat pembayaran" icon="hand-coins" style={{ flexGrow: 1 }} onPress={() => { setAmount(String(due)); setPayOpen(true); }} testID="sale-add-payment-button" />
+            <Button title="Ubah janji bayar" icon="calendar" variant="outline" style={{ flexGrow: 1 }} onPress={() => { setPromiseInput(promise ?? ""); setPromiseOpen(true); }} testID="sale-promise-button" />
+            {customer?.phone ? <Button title="Tagih via WhatsApp" icon="message-circle" variant="secondary" style={{ flexGrow: 1 }} testID="sale-wa-button"
+              onPress={() => openWhatsApp(customer.phone, collectionMessage(customer.name, sale.number, due, promise, business)).catch(() => toast("WhatsApp tidak bisa dibuka", "error"))} /> : null}
+          </View>
+        </Card>
+      ) : null}
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
         <Button title="Cetak" icon="printer" variant="outline" style={{ flex: 1 }} onPress={() => safe(() => printHtml(h()))} testID="sale-print-button" />
         <Button title="Bagikan PDF" icon="share-2" variant="outline" style={{ flex: 1 }} onPress={() => safe(() => sharePdf(h(), sale.number))} testID="sale-share-button" />
       </View>
+      <BluetoothPrintButton sale={sale} business={business} customer={customer} paid={paid} testID="sale-bt-print-button" />
       {sale.note ? <T v="caption" style={{ marginTop: spacing.md }}>Catatan: {sale.note}</T> : null}
       <T v="caption" style={{ marginTop: spacing.md }} color={colors.muted}>Transaksi bersifat permanen (tidak dapat diubah) agar laporan dan stok tetap konsisten.</T>
+
+      <Sheet visible={promiseOpen} onClose={() => setPromiseOpen(false)} title="Janji bayar" testID="promise-sheet"
+        footer={<Button title="Simpan janji bayar" icon="check" testID="promise-save-button" onPress={() => { if (run(() => setPromiseDate(sale.id, promiseInput.trim() || null), "Janji bayar diperbarui")) setPromiseOpen(false); }} />}>
+        <Field label="Tanggal (YYYY-MM-DD)" value={promiseInput} onChangeText={setPromiseInput} placeholder="2026-12-01" testID="promise-input" help="Kosongkan untuk menghapus janji bayar. Pengingat tagihan muncul di Beranda pada tanggal ini." />
+      </Sheet>
 
       <Sheet visible={payOpen} onClose={() => setPayOpen(false)} title="Catat pelunasan" testID="payment-sheet"
         footer={<Button title="Simpan pembayaran" icon="check" testID="payment-save-button" onPress={() => { if (run(() => addSalePayment(sale.id, toNum(amount), method), "Pembayaran dicatat")) setPayOpen(false); }} />}>

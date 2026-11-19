@@ -10,7 +10,7 @@
 //    transaction that contains only database requests. IndexedDB guarantees that one is all-or-nothing.
 // 3. If the callback throws, nothing is applied.
 // Writes of one database run one at a time: across browser tabs through the Web Locks API, or within
-// this page through a queue when Web Locks is unavailable (older browsers; cross-tab ordering is then
+// this page through one queue per database name when Web Locks is unavailable (older browsers; cross-tab ordering is then
 // not guaranteed). Reads made by the callback are not locked against other tabs' direct reads,
 // only against other writers.
 import { Dexie } from "dexie";
@@ -30,8 +30,13 @@ const copy = <T>(v: T): T => (v === undefined ? v : structuredClone(v));
 type Staged = { cleared: boolean; puts: Map<string, Row>; deletes: Set<string> };
 
 /** Serialise writers: Web Locks (cross-tab) when available, otherwise an in-page queue. */
+// One fallback queue per DATABASE NAME (not per instance), so two instances of the same database in
+// one page are still serialised when Web Locks is unavailable (review finding M7).
+const fallbackQueues = new Map<string, ReturnType<typeof createSerialQueue>>();
+
 function createWriteLock(name: string) {
-  const queue = createSerialQueue();
+  let queue = fallbackQueues.get(name);
+  if (!queue) fallbackQueues.set(name, (queue = createSerialQueue()));
   const locks: any = (globalThis as any).navigator?.locks;
   if (!locks?.request) return queue.run;
   return <T>(fn: () => Promise<T>): Promise<T> => {

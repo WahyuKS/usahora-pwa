@@ -7,7 +7,7 @@ import { ActivityIndicator, Linking, Modal, Pressable, View } from "react-native
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, Icon, IconButton, IconTile, T, useUI, type IconName } from "@/src/components/ui";
-import { fileUrl, uploadImage } from "@/src/lib/api";
+import { CLOUD_ENABLED, fileUrl, hasToken, uploadImage } from "@/src/lib/api";
 import { radius, spacing, useTheme } from "@/src/theme";
 
 /** Authenticated image from object storage, with an initial-letter / icon fallback. */
@@ -24,11 +24,32 @@ export function Thumb({ fileId, size = 40, label, icon = "package", rounded }: {
   return <IconTile name={icon} size={size} />;
 }
 
+/** Business logo (picked on this device or from the cloud); falls back to the business initial. */
+export function BusinessAvatar({ business, size = 40, testID }: { business: { name?: string; logo_data_url?: string | null; logo_file_id?: string | null } | null | undefined; size?: number; testID?: string }) {
+  const { colors } = useTheme();
+  const r = Math.round(size * 0.28);
+  if (business?.logo_data_url)
+    return (
+      <View testID={testID} style={{ width: size, height: size, borderRadius: r, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: colors.border, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
+        <Image source={{ uri: business.logo_data_url }} style={{ width: size - 2, height: size - 2 }} contentFit="contain" />
+      </View>
+    );
+  if (business?.logo_file_id) return <View testID={testID}><Thumb fileId={business.logo_file_id} size={size} /></View>;
+  const initials = (business?.name ?? "U").trim().split(/\s+/).slice(0, 2).map((w) => w[0] ?? "").join("").toUpperCase() || "U";
+  return (
+    <View testID={testID} style={{ width: size, height: size, borderRadius: r, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}>
+      <T v={size >= 72 ? "h1" : size > 48 ? "h2" : "label"} weight="bold" color={colors.brandPrimary} style={size >= 72 ? { fontSize: size * 0.34, lineHeight: size * 0.42 } : undefined}>{initials}</T>
+    </View>
+  );
+}
+
 /** Pick a photo from the gallery and upload it. Returns the stored file id. */
 export function PhotoPicker({ fileId, onChange, label, testID, square = true }: { fileId?: string | null; onChange: (id: string | null) => void; label: string; testID: string; square?: boolean }) {
   const { colors } = useTheme();
   const { toast } = useUI();
   const [busy, setBusy] = useState(false);
+  // Photos are stored in cloud object storage; without a cloud account there is nowhere to put them.
+  if (!CLOUD_ENABLED || !hasToken()) return null;
   const pick = async () => {
     const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -92,7 +113,7 @@ export function BarcodeScanner({ visible, onClose, onScan, title = "Scan barcode
           <View style={{ flex: 1, justifyContent: "center", padding: spacing.xl, gap: spacing.md }}>
             <IconTile name="scan-barcode" size={64} />
             <T v="h2" color={colors.onSurfaceInverse}>Izinkan kamera</T>
-            <T v="body" color={colors.borderStrong}>Kamera dipakai untuk membaca barcode produk agar kasir bisa menambah barang ke keranjang dengan sekali arahkan.</T>
+            <T v="body" color="rgba(255,255,255,0.75)">Kamera dipakai untuk membaca barcode produk agar kasir bisa menambah barang ke keranjang dengan sekali arahkan.</T>
             {perm && !perm.canAskAgain && perm.status === "denied" ? (
               <Button title="Buka Pengaturan" icon="settings" onPress={() => Linking.openSettings()} testID="scanner-open-settings" />
             ) : (

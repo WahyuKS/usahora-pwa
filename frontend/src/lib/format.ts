@@ -26,17 +26,22 @@ export function fmtDate(d: Date | string | number) {
   const j = jd(d);
   return `${j.getUTCDate()} ${MONTHS[j.getUTCMonth()]} ${j.getUTCFullYear()}`;
 }
-export function fmtDateTime(d: Date | string | number) {
+/** HH:MM in Jakarta time */
+export function fmtTime(d: Date | string | number) {
   const j = jd(d);
-  const hh = String(j.getUTCHours()).padStart(2, "0");
-  const mm = String(j.getUTCMinutes()).padStart(2, "0");
-  return `${fmtDate(d)}, ${hh}:${mm}`;
+  return `${String(j.getUTCHours()).padStart(2, "0")}:${String(j.getUTCMinutes()).padStart(2, "0")}`;
+}
+export function fmtDateTime(d: Date | string | number) {
+  return `${fmtDate(d)}, ${fmtTime(d)}`;
 }
 /** YYYY-MM-DD in Jakarta time */
 export function dayKey(d: Date | string | number = new Date()) {
   return jd(d).toISOString().slice(0, 10);
 }
 export const monthLabel = (m: number) => MONTHS[m];
+const DAYS = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+/** "Kamis, 19 Nov 2026" (Jakarta). */
+export const fmtDayLong = (d: Date | string | number = new Date()) => `${DAYS[jd(d).getUTCDay()]}, ${fmtDate(d)}`;
 export const shortDay = (key: string) => {
   const [, m, d] = key.split("-");
   return `${Number(d)} ${MONTHS[Number(m) - 1]}`;
@@ -57,18 +62,35 @@ export function addMonths(key: string, months: number) {
   return d.toISOString().slice(0, 10);
 }
 
-export type Period = "today" | "7d" | "month" | "year" | "all";
-export const PERIODS: { key: Period; label: string }[] = [
+/** Preset periods, or a custom date / date range chosen by the user (YYYY-MM-DD, Jakarta days, inclusive). */
+export type PresetPeriod = "today" | "7d" | "month" | "year" | "all";
+export type CustomPeriod = { from: string; to: string };
+export type Period = PresetPeriod | CustomPeriod;
+export const isCustomPeriod = (p: Period): p is CustomPeriod => typeof p === "object" && p !== null;
+export const samePeriod = (a: Period, b: Period) => (isCustomPeriod(a) && isCustomPeriod(b) ? a.from === b.from && a.to === b.to : a === b);
+export const PERIODS: { key: PresetPeriod; label: string }[] = [
   { key: "today", label: "Hari ini" },
   { key: "7d", label: "7 hari" },
   { key: "month", label: "Bulan ini" },
   { key: "year", label: "Tahun ini" },
   { key: "all", label: "Semua" },
 ];
+/** Human label: "Bulan ini", "19 Nov 2026", or "1 Nov 2026 – 19 Nov 2026". */
+export function periodLabel(p: Period) {
+  if (!isCustomPeriod(p)) return PERIODS.find((x) => x.key === p)?.label ?? "";
+  return p.from === p.to ? fmtDate(p.from) : `${fmtDate(p.from)} – ${fmtDate(p.to)}`;
+}
+/** Number of days a period covers (custom periods: inclusive). */
+export const periodDays = (p: Period) => (isCustomPeriod(p) ? Math.round((Date.parse(p.to) - Date.parse(p.from)) / 86_400_000) + 1 : { today: 1, "7d": 7, month: 31, year: 366, all: 9999 }[p]);
+
 export function rangeOf(p: Period, now = new Date()): { start: number; end: number } {
+  if (isCustomPeriod(p)) {
+    const [from, to] = p.from <= p.to ? [p.from, p.to] : [p.to, p.from];
+    return { start: Date.parse(from + "T00:00:00Z") - JKT, end: Date.parse(to + "T00:00:00Z") - JKT + 86_400_000 - 1 };
+  }
   const j = jd(now);
   const y = j.getUTCFullYear(), m = j.getUTCMonth(), d = j.getUTCDate();
-  const map: Record<Period, number> = {
+  const map: Record<PresetPeriod, number> = {
     today: Date.UTC(y, m, d),
     "7d": Date.UTC(y, m, d - 6),
     month: Date.UTC(y, m, 1),

@@ -8,7 +8,7 @@ import { fonts, useTheme } from "@/src/theme";
 
 const TABS: { name: string; title: string; icon: IconName; sf: string }[] = [
   { name: "index", title: "Beranda", icon: "house", sf: "house.fill" },
-  { name: "pos", title: "Kasir", icon: "shopping-cart", sf: "cart.fill" },
+  { name: "pos", title: "Jual", icon: "shopping-bag", sf: "bag.fill" },
   { name: "products", title: "Produk", icon: "package", sf: "shippingbox.fill" },
   { name: "more", title: "Lainnya", icon: "menu", sf: "square.grid.2x2.fill" },
 ];
@@ -33,9 +33,9 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.brandPrimary,
         tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, ...(Platform.OS === "web" ? { height: 64 } : {}) },
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.divider, shadowColor: colors.shadow, shadowOpacity: colors.shadowOpacity, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, ...(Platform.OS === "web" ? { height: 66 } : {}) },
         tabBarItemStyle: { alignSelf: "center" },
-        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 11 },
+        tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 0.2 },
       }}
     >
       {TABS.map((t) => (

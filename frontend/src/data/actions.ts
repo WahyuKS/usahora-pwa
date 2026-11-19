@@ -1,7 +1,7 @@
 import { addDays, addMonths, dateKeyToISO, dayKey, nowISO, rp, uuid } from "@/src/lib/format";
-import { ENTITIES, getState, nextNumber, remove, replaceAll, setMeta, upsert, type DBState } from "./store";
+import { ENTITIES, getState, mergeAll, nextNumber, remove, replaceAll, setMeta, upsert, type DBState, type MergeReport } from "./store";
 import { paidMap, stockMap } from "./selectors";
-import type { Bill, Contact, FinanceEntry, Invoice, InvoiceItem, MovementType, PayMethod, Product, Purchase, PurchaseItem, Sale } from "./types";
+import { tracksStock, type Bill, type Contact, type FinanceEntry, type Invoice, type InvoiceItem, type MovementType, type PayMethod, type Product, type Purchase, type PurchaseItem, type Sale } from "./types";
 
 export class ValidationError extends Error {}
 let actor = "";
@@ -27,7 +27,7 @@ export function saveProduct(p: Partial<Product>, initialStock = 0, stockAt?: str
     barcode: "", category: "Umum", description: "", unit: "pcs", min_stock: 0, archived: false, ...p,
     name: p.name!.trim(), sku: sku ?? "",
   });
-  if (isNew && initialStock > 0) addMovement(rec.id, "awal", initialStock, "Stok awal", undefined, p.is_demo, stockAt);
+  if (isNew && initialStock > 0 && tracksStock(rec)) addMovement(rec.id, "awal", initialStock, "Stok awal", undefined, p.is_demo, stockAt);
   logActivity("product", `${isNew ? "Menambahkan" : "Memperbarui"} produk ${rec.name}`, p.is_demo);
   return rec as Product;
 }
@@ -64,32 +64,48 @@ export function adjustStock(product_id: string, actual: number, note: string) {
 export type CartLine = { product: Product; qty: number; discount: number };
 export function checkout(input: {
   lines: CartLine[]; discount: number; method: PayMethod; received: number; customer_id: string | null; note: string; is_demo?: boolean; created_at?: string;
+  /** Promise-to-pay date for the unpaid part (YYYY-MM-DD). */
+  due_date?: string | null;
 }): Sale {
   must(input.lines.length > 0, "Keranjang masih kosong");
   const st = stockMap(getState());
   const items = input.lines.map((l) => {
     must(l.qty > 0, `Jumlah ${l.product.name} tidak valid`);
-    must((st[l.product.id] ?? 0) >= l.qty, `Stok ${l.product.name} tidak cukup (tersisa ${st[l.product.id] ?? 0})`);
+    if (tracksStock(l.product)) must((st[l.product.id] ?? 0) >= l.qty, `Stok ${l.product.name} tidak cukup (tersisa ${st[l.product.id] ?? 0})`);
     must(l.discount >= 0 && l.discount <= l.qty * l.product.sell_price, `Diskon ${l.product.name} melebihi harga`);
-    return { product_id: l.product.id, name: l.product.name, qty: l.qty, price: l.product.sell_price, cost: l.product.cost_price, discount: l.discount };
+    return { product_id: l.product.id, name: l.product.name, qty: l.qty, price: l.product.sell_price, cost: l.product.cost_price, discount: l.discount, stocked: tracksStock(l.product) };
   });
   const subtotal = items.reduce((a, i) => a + i.qty * i.price - i.discount, 0);
   must(input.discount >= 0 && input.discount <= subtotal, "Diskon transaksi melebihi subtotal");
   const total = subtotal - input.discount;
   must(input.received >= 0, "Jumlah uang diterima tidak valid");
   if (!input.customer_id) must(input.received >= total, "Pembayaran kurang. Pilih pelanggan untuk mencatat sebagai piutang.");
+  if (input.due_date) must(DATE_RE.test(input.due_date), "Tanggal janji bayar tidak valid");
   const paid = Math.min(input.received, total);
   const demo = input.is_demo ? { is_demo: true } : {};
   const at = input.created_at ? { created_at: input.created_at } : {};
   const sale = upsert("sales", {
-    number: nextNumber("TRX"), customer_id: input.customer_id, items, subtotal, discount: input.discount, total,
+    number: nextNumber("TRX"), customer_id: input.customer_id, items: items.map(({ stocked: _s, ...i }) => i), subtotal, discount: input.discount, total,
     cogs: items.reduce((a, i) => a + i.qty * i.cost, 0), method: input.method, received: input.received,
     change: Math.max(0, input.received - total), note: input.note, cashier_name: actor, ...demo, ...at,
+    due_date: input.received < total ? input.due_date ?? null : null,
   }) as Sale;
-  items.forEach((i) => addMovement(i.product_id, "penjualan", -i.qty, `Penjualan ${sale.number}`, sale.id, input.is_demo, input.created_at));
+  // Services and rentals (kind "jasa") have no stock, so no stock movement.
+  items.filter((i) => i.stocked).forEach((i) => addMovement(i.product_id, "penjualan", -i.qty, `Penjualan ${sale.number}`, sale.id, input.is_demo, input.created_at));
   if (paid > 0) upsert("payments", { sale_id: sale.id, amount: paid, method: input.method, ...demo, ...at }, { silent: true });
   logActivity("sale", `Penjualan ${sale.number} sebesar ${rp(total)}`, input.is_demo);
   return sale;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Change the promise-to-pay date of a sale (the sale record itself stays unchanged). */
+export function setPromiseDate(sale_id: string, date: string | null) {
+  must(!date || DATE_RE.test(date), "Tanggal janji bayar tidak valid");
+  const promises = { ...(getState().meta.promises ?? {}) };
+  if (date) promises[sale_id] = date;
+  else delete promises[sale_id];
+  setMeta({ promises });
 }
 
 export function addSalePayment(sale_id: string, amount: number, method: PayMethod) {
@@ -275,8 +291,8 @@ export function buildBackup(business: { id: string; name: string } | null) {
 }
 
 export function validateBackup(obj: any): string | null {
-  if (!obj || typeof obj !== "object") return "File bukan JSON yang valid";
-  if (obj.app !== "usahora") return "File ini bukan backup USAHORA";
+  if (!obj || typeof obj !== "object") return "File tidak bisa dibaca. Pilih file cadangan USAHORA.";
+  if (obj.app !== "usahora") return "File ini bukan file cadangan USAHORA.";
   for (const e of ENTITIES) {
     if (obj[e] !== undefined && !Array.isArray(obj[e])) return `Bagian "${e}" rusak`;
     if (Array.isArray(obj[e]) && obj[e].some((r: any) => !r || typeof r.id !== "string")) return `Data "${e}" tidak memiliki ID yang valid`;
@@ -286,7 +302,14 @@ export function validateBackup(obj: any): string | null {
 
 export function restoreBackup(obj: Partial<DBState>) {
   replaceAll(obj);
-  logActivity("backup", "Data dipulihkan dari backup");
+  logActivity("backup", "Data dipulihkan dari file cadangan");
+}
+
+/** Combine a backup from another device with the data on this device (nothing here is deleted). */
+export function mergeBackup(obj: Partial<DBState>): MergeReport {
+  const r = mergeAll(obj);
+  logActivity("backup", `Data digabung dari perangkat lain: ${r.added} baru, ${r.updated} diperbarui`);
+  return r;
 }
 
 export const newId = uuid;

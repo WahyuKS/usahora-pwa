@@ -1,14 +1,18 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { useWindowDimensions, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
-import { Thumb } from "@/src/components/media";
-import { Badge, Button, Card, Chips, Divider, EmptyState, Icon, IconTile, ListRow, Logo, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
+import { BackupReminder } from "@/src/components/backup-reminder";
+import { PeriodPicker } from "@/src/components/period-picker";
+import { CollectionsCard } from "@/src/components/collections";
+import { BusinessAvatar } from "@/src/components/media";
+import { Badge, Button, Card, Divider, EmptyState, Icon, IconTile, ListRow, Logo, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
 import { loadDemo, payBill } from "@/src/data/actions";
 import { billsDue, hasDemo, lowStock, payables, receivables, salesSeries, summary, topProducts } from "@/src/data/selectors";
 import { setMeta, useDB } from "@/src/data/store";
-import { dayKey, fmtDate, fmtDateTime, monthLabel, PERIODS, rp, shortDay, type Period } from "@/src/lib/format";
+import { dayKey, fmtDate, fmtDateTime, fmtDayLong, monthLabel, periodLabel, rp, shortDay, type Period } from "@/src/lib/format";
 import { radius, spacing, useTheme } from "@/src/theme";
 
 function Kpi({ label, value, icon, tone, sub, testID, width }: { label: string; value: string; icon: IconName; tone?: "brand" | "success" | "warning" | "error" | "neutral"; sub?: string; testID: string; width: any }) {
@@ -21,6 +25,33 @@ function Kpi({ label, value, icon, tone, sub, testID, width }: { label: string; 
       <T v="h3" weight="bold" numberOfLines={1} style={{ marginTop: spacing.sm }} testID={`${testID}-value`}>{value}</T>
       {sub ? <T v="caption" numberOfLines={1} style={{ marginTop: 2 }}>{sub}</T> : null}
     </Card>
+  );
+}
+
+/** Owner hero: the number that matters most (net profit), with what produced it. */
+function ProfitHero({ s, periodLabel, onSell }: { s: { net: number; omzet: number; gross: number; opex: number; count: number }; periodLabel: string; onSell: () => void }) {
+  const stat = (label: string, value: string, testID: string) => (
+    <View style={{ flex: 1, minWidth: 0 }} testID={testID}>
+      <T v="caption" color="rgba(255,255,255,0.68)" numberOfLines={1}>{label}</T>
+      <T v="label" color="#FFFFFF" numberOfLines={1} style={{ marginTop: 2 }}>{value}</T>
+    </View>
+  );
+  return (
+    <LinearGradient colors={["#0B1630", "#1B3A8F", "#2563EB"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: radius.lg, padding: spacing.xl, marginBottom: spacing.md, overflow: "hidden" }} testID="profit-hero">
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <T v="caption" color="rgba(255,255,255,0.75)" style={{ letterSpacing: 0.6 }}>UNTUNG BERSIH · {periodLabel.toUpperCase()}</T>
+        <View style={{ backgroundColor: "rgba(255,255,255,0.14)", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 }}>
+          <T v="caption" color="#FFFFFF">{s.count} transaksi</T>
+        </View>
+      </View>
+      <T v="display" color={s.net >= 0 ? "#FFFFFF" : "#FCA5A5"} numberOfLines={1} style={{ marginTop: spacing.sm, fontSize: 34, letterSpacing: -0.5 }} testID="profit-hero-value">{rp(s.net)}</T>
+      <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.14)" }}>
+        {stat("Omzet", rp(s.omzet), "profit-hero-omzet")}
+        {stat("Laba kotor", rp(s.gross), "profit-hero-gross")}
+        {stat("Pengeluaran", rp(s.opex), "profit-hero-opex")}
+      </View>
+      <Button title="Catat penjualan" icon="shopping-bag" variant="secondary" onPress={onSell} style={{ marginTop: spacing.lg }} testID="profit-hero-sell" />
+    </LinearGradient>
   );
 }
 
@@ -65,7 +96,7 @@ export default function Dashboard() {
     };
   }, [db, period]);
   const isEmpty = db.products.length === 0 && db.sales.length === 0;
-  const logo = <View style={{ marginRight: spacing.sm }} testID="dashboard-business-logo">{business?.logo_file_id ? <Thumb fileId={business.logo_file_id} size={40} /> : <Logo size={40} />}</View>;
+  const logo = <View style={{ marginRight: spacing.sm }} testID="dashboard-business-logo">{business?.logo_data_url || business?.logo_file_id ? <BusinessAvatar business={business} size={40} /> : <Logo size={40} />}</View>;
 
   if (!isOwner) {
     const mine = data.today.sales.filter((s: any) => s.cashier_name === user?.name);
@@ -87,8 +118,9 @@ export default function Dashboard() {
   }
 
   return (
-    <Screen tab back={false} leading={logo} title={business?.name ?? "USAHORA"} subtitle={`Ringkasan usaha · ${fmtDate(new Date())}`} right={<SyncPill />} testID="dashboard-screen"
-      headerExtra={<Chips options={PERIODS.slice(0, 4)} value={period} onChange={setPeriod} testIDPrefix="dashboard-period" style={{ marginHorizontal: -spacing.sm }} />}>
+    <Screen tab back={false} leading={logo} title={business?.name ?? "USAHORA"} subtitle={`${fmtDayLong()} · Ringkasan ${periodLabel(period)}`} right={<SyncPill />} testID="dashboard-screen"
+      headerExtra={<PeriodPicker value={period} onChange={setPeriod} presets={["today", "7d", "month", "year"]} testIDPrefix="dashboard-period" style={{ marginHorizontal: -spacing.sm }} />}>
+      <BackupReminder />
       {isEmpty ? (
         <Card testID="onboarding-card">
           <EmptyState icon="sparkles" title="Selamat datang di USAHORA" message="Belum ada produk. Tambahkan produk pertama untuk mulai mengelola stok dan penjualan, atau coba dulu dengan data demo yang bisa dihapus kapan saja." />
@@ -98,6 +130,8 @@ export default function Dashboard() {
           </View>
         </Card>
       ) : null}
+      {!isEmpty ? <CollectionsCard /> : null}
+      {!isEmpty ? <ProfitHero s={data.s} periodLabel={periodLabel(period)} onSell={() => router.push("/pos")} /> : null}
       {hasDemo(db) ? (
         <Card style={{ backgroundColor: colors.warningSoft, borderColor: colors.warningSoft, marginBottom: spacing.md, padding: spacing.md }} onPress={() => router.push("/settings")} testID="demo-banner">
           <T v="label" color={colors.warningText}>Mode demo aktif — angka di bawah adalah data contoh. Ketuk untuk menghapus.</T>
@@ -116,7 +150,7 @@ export default function Dashboard() {
       </View>
 
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg }}>
-        <Button title="Transaksi" icon="shopping-cart" onPress={() => router.push("/pos")} style={{ flex: 1 }} testID="quick-new-sale" />
+        <Button title="Jual" icon="shopping-bag" onPress={() => router.push("/pos")} style={{ flex: 1 }} testID="quick-new-sale" />
         <Button title="Pengeluaran" icon="wallet" variant="secondary" onPress={() => router.push({ pathname: "/finance", params: { add: "expense" } })} style={{ flex: 1 }} testID="quick-add-expense" />
       </View>
 
@@ -164,7 +198,7 @@ export default function Dashboard() {
         ))}
       </Card>
 
-      <SectionTitle title="Aktivitas terbaru" />
+      <SectionTitle title="Aktivitas terbaru" action="Lihat semua" onAction={() => router.push("/activities")} testID="activities-see-all" />
       <Card testID="activity-card">
         {db.activities.length === 0 ? <T v="caption">Belum ada aktivitas.</T> : db.activities.slice(0, 6).map((a: any, i: number) => (
           <View key={a.id} style={{ flexDirection: "row", gap: spacing.md, paddingVertical: spacing.sm, borderTopWidth: i ? 1 : 0, borderTopColor: colors.divider }}>
