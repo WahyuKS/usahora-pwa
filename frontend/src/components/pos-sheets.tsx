@@ -6,6 +6,8 @@ import type { CartLine } from "@/src/data/actions";
 import type { Business, Contact, PayMethod, Sale } from "@/src/data/types";
 import { BluetoothPrintButton } from "@/src/components/bt-print-button";
 import { receiptHtml } from "@/src/lib/docs";
+import { cartProfit, pct } from "@/src/lib/profit";
+import { useAuth } from "@/src/auth";
 import { printHtml, sharePdf } from "@/src/lib/export";
 import { rp, toNum } from "@/src/lib/format";
 import { radius, spacing, useTheme } from "@/src/theme";
@@ -33,6 +35,8 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
   const rec = method === "tunai" ? toNum(received) : received === "" ? total : toNum(received);
   const change = Math.max(0, rec - total);
   const short = Math.max(0, total - rec);
+  const { isOwner } = useAuth();
+  const prof = cartProfit(cart, toNum(discount));
 
   useEffect(() => {
     if (!visible) return;
@@ -57,6 +61,14 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
             <T v="label" color={colors.muted}>Total bayar</T>
             <T v="h2" testID="checkout-total">{rp(total)}</T>
           </View>
+          {isOwner && total > 0 ? (
+            <View testID="checkout-profit" style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: prof.profit >= 0 ? colors.successSoft : colors.errorSoft, borderRadius: 10, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.sm }}>
+              <T v="caption" color={prof.profit >= 0 ? colors.success : colors.error} style={{ flex: 1 }}>
+                {prof.profit >= 0 ? "Untung transaksi ini" : "Rugi: harga di bawah modal"}{prof.missingCost ? ` · ${prof.missingCost} produk belum ada harga modal` : ""}
+              </T>
+              <T v="label" color={prof.profit >= 0 ? colors.success : colors.error} testID="checkout-profit-value">{rp(prof.profit)} · {pct(prof.margin)}</T>
+            </View>
+          ) : null}
           <Button title={short > 0 && customer ? `Simpan (piutang ${rp(short)})` : "Simpan transaksi"} icon="circle-check" size="lg" testID="checkout-confirm-button"
             onPress={() => onPay({ discount: toNum(discount), method, received: rec, customer_id: customer?.id ?? null, note })} />
         </View>
@@ -117,6 +129,7 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
 
 export function ReceiptSheet({ sale, onClose, business, customer, paid, onDetail }: { sale: Sale | null; onClose: () => void; business: Business | null; customer?: Contact; paid: number; onDetail: () => void }) {
   const { colors } = useTheme();
+  const { isOwner } = useAuth();
   const { toast } = useUI();
   if (!sale) return null;
   const h = () => receiptHtml(sale, business, customer, paid);
@@ -137,6 +150,7 @@ export function ReceiptSheet({ sale, onClose, business, customer, paid, onDetail
         <T v="display" testID="receipt-total">{rp(sale.total)}</T>
         <T v="label" color={colors.success} testID="receipt-change">Kembalian {rp(sale.change)}</T>
         {paid < sale.total ? <T v="label" color={colors.warningText}>Piutang {rp(sale.total - paid)}</T> : null}
+        {isOwner ? <T v="caption" color={sale.total - sale.cogs >= 0 ? colors.success : colors.error} testID="receipt-profit">{sale.total - sale.cogs >= 0 ? "Untung" : "Rugi"} {rp(Math.abs(sale.total - sale.cogs))} dari transaksi ini</T> : null}
       </View>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Button title="Cetak" icon="printer" variant="outline" style={{ flex: 1 }} onPress={() => run(() => printHtml(h()))} testID="receipt-print-button" />

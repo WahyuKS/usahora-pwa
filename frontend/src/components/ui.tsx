@@ -461,13 +461,13 @@ export function useRun() {
 
 const useStyles = makeStyles((c) => ({
   screen: { flex: 1, backgroundColor: c.surfaceSecondary },
-  header: { backgroundColor: c.surface, borderBottomWidth: 1, borderBottomColor: c.border, paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
+  header: { backgroundColor: c.surfaceSecondary, paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, minHeight: 48, paddingHorizontal: spacing.xs },
   maxw: { width: "100%", maxWidth: 1040, alignSelf: "center" },
-  footer: { backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.border, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  footer: { backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.divider, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   card: {
     backgroundColor: c.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, padding: spacing.lg,
-    shadowColor: c.shadow, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    shadowColor: c.shadow, shadowOpacity: 0.05, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 2,
   },
   inputWrap: { flexDirection: "row", alignItems: "center", height: 48, borderWidth: 1, borderColor: c.border, borderRadius: radius.md, backgroundColor: c.surface, paddingHorizontal: spacing.md },
   // minWidth 0: on web an <input> has an intrinsic width (about 20 characters) and would otherwise

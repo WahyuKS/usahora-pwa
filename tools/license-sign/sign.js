@@ -6,8 +6,9 @@
 //       to put in frontend/src/license/public-key.ts. Run once. Back up private.pem somewhere safe:
 //       without it you cannot issue licenses that existing app builds accept.
 //
-//   node tools/license-sign/sign.js issue --name "Toko Maju Jaya" [--email pembeli@mail.com] [--order SHP-123]
-//       Prints a license code for one buyer. Send it to the buyer after payment.
+//   node tools/license-sign/sign.js issue --name "Toko Maju Jaya" --device ABCD-EFGH-JKMN [--order SHP-123]
+//       Prints a license code for one buyer and ONE device. The buyer finds the device ID in
+//       Lainnya > Lisensi and sends it to you. Send the code back after payment.
 //
 //   node tools/license-sign/sign.js verify <code>
 //       Checks a code against the public key (useful for support).
@@ -49,24 +50,30 @@ if (cmd === "init") {
     console.error('Wajib: --name "Nama pembeli / usaha"');
     process.exit(1);
   }
+  const device = (arg("device") || "").toUpperCase().replace(/[^0-9A-Z]/g, "").replace(/(.{4})(?=.)/g, "$1-");
+  if (!/^[2-9A-HJKMNP-TV-Z]{4}-[2-9A-HJKMNP-TV-Z]{4}-[2-9A-HJKMNP-TV-Z]{4}$/.test(device)) {
+    console.error('Wajib: --device XXXX-XXXX-XXXX (ID perangkat dari menu Lainnya > Lisensi di aplikasi pembeli)');
+    process.exit(1);
+  }
   if (!fs.existsSync(PRIV)) {
     console.error(`Kunci privat tidak ditemukan (${PRIV}). Jalankan "init" dulu atau set USAHORA_LICENSE_KEY.`);
     process.exit(1);
   }
   const payload = {
     p: "usahora",
-    v: 1,
+    v: 2,
     id: crypto.randomUUID().slice(0, 8).toUpperCase(),
     name,
     email: arg("email") || undefined,
     order: arg("order") || undefined,
+    device,
     edition: "lifetime",
     issued: new Date().toISOString().slice(0, 10),
   };
   const body = Buffer.from(JSON.stringify(payload));
   const sig = crypto.sign(null, body, crypto.createPrivateKey(fs.readFileSync(PRIV)));
   console.log(`${PREFIX}${b64url(body)}.${b64url(sig)}`);
-  console.error(`(lisensi ${payload.id} untuk ${name})`);
+  console.error(`(lisensi ${payload.id} untuk ${name}, perangkat ${device})`);
 } else if (cmd === "pubkey") {
   console.log(b64url(rawPublic(crypto.createPublicKey(fs.readFileSync(PUB)))));
 } else if (cmd === "verify") {
@@ -77,5 +84,5 @@ if (cmd === "init") {
   console.log(ok ? `VALID: ${from(b).toString()}` : "TIDAK VALID");
   process.exit(ok ? 0 : 1);
 } else {
-  console.log("Perintah: init | pubkey | issue --name \"...\" [--email ...] [--order ...] | verify <kode>");
+  console.log("Perintah: init | pubkey | issue --name \"...\" --device XXXX-XXXX-XXXX [--order ...] | verify <kode>");
 }

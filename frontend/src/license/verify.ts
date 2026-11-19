@@ -13,6 +13,8 @@ export type LicensePayload = {
   name: string;
   email?: string;
   order?: string;
+  /** Device the code was issued for (required since v2). */
+  device?: string;
   edition: string;
   issued: string;
 };
@@ -59,7 +61,10 @@ export const normaliseCode = (raw: string) => {
   return s.toUpperCase().startsWith(LICENSE_PREFIX) ? LICENSE_PREFIX + s.slice(LICENSE_PREFIX.length) : s;
 };
 
-export function verifyLicense(raw: string, publicKey = LICENSE_PUBLIC_KEY): VerifyResult {
+/**
+ * @param deviceId this device's ID. A code is only valid on the device it was issued for.
+ */
+export function verifyLicense(raw: string, deviceId: string, publicKey = LICENSE_PUBLIC_KEY): VerifyResult {
   const code = normaliseCode(raw);
   if (!code.startsWith(LICENSE_PREFIX)) return { ok: false, error: "Kode lisensi harus diawali USAHORA-" };
   const parts = code.slice(LICENSE_PREFIX.length).split(".");
@@ -72,6 +77,8 @@ export function verifyLicense(raw: string, publicKey = LICENSE_PUBLIC_KEY): Veri
     if (!nacl.sign.detached.verify(body, sig, key)) return { ok: false, error: "Kode lisensi tidak valid." };
     const payload = JSON.parse(utf8(body)) as LicensePayload;
     if (payload.p !== "usahora" || typeof payload.name !== "string" || typeof payload.id !== "string") return { ok: false, error: "Kode ini bukan lisensi USAHORA." };
+    if (!payload.device) return { ok: false, error: "Kode lisensi lama tanpa ID perangkat. Minta kode baru ke penjual dengan menyertakan ID perangkat Anda." };
+    if (payload.device !== deviceId) return { ok: false, error: `Kode ini untuk perangkat ${payload.device}, bukan perangkat ini (${deviceId}). Minta kode untuk ID perangkat ini.` };
     return { ok: true, payload };
   } catch {
     return { ok: false, error: "Kode lisensi rusak. Salin ulang seluruh kode." };

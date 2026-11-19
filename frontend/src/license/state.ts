@@ -1,14 +1,16 @@
 // License status for this device: licensed (valid code saved), trial (14 days from first use) or expired.
 // Everything is stored locally; the app never needs the internet to check it.
 //
-// Honest limits (documented in docs/SELLING.md): a code can be typed on several devices, and a
-// determined user can reset the trial by wiping the browser data (which also wipes their business data).
-// The licensee's name is shown in the app, which discourages sharing.
+// Each code is issued for ONE device ID (see device.ts), so a shared code does not work elsewhere.
+// Honest limits (documented in docs/SELLING.md): wiping the browser data creates a new device ID (the
+// buyer then asks for a new code), and a determined user can reset the trial the same way (which also
+// wipes their business data). Everything is checked offline; there is no activation server.
 import { useSyncExternalStore } from "react";
 
 import { CLOUD_ENABLED } from "@/src/lib/api";
 import { storage } from "@/src/utils/storage";
 
+import { getDeviceId } from "./device";
 import { verifyLicense, normaliseCode, type LicensePayload } from "./verify";
 
 export const TRIAL_DAYS = 14;
@@ -25,6 +27,8 @@ export type LicenseStatus =
 
 /** Where buyers can purchase a license (shown on the activation screen). Set at build time. */
 export const PURCHASE_URL = (process.env.EXPO_PUBLIC_PURCHASE_URL ?? "").trim();
+/** Seller WhatsApp number in international format without "+" (e.g. 6281234567890). Empty = buyer picks the contact. */
+export const SELLER_WHATSAPP = (process.env.EXPO_PUBLIC_SELLER_WHATSAPP ?? "").replace(/[^0-9]/g, "");
 
 let status: LicenseStatus = { kind: "loading" };
 const listeners = new Set<() => void>();
@@ -75,7 +79,7 @@ export async function refreshLicense(now = Date.now()): Promise<LicenseStatus> {
   }
   const code = await storage.getItem(LICENSE_KEY, null as string | null);
   if (code) {
-    const v = verifyLicense(code);
+    const v = verifyLicense(code, await getDeviceId());
     if (v.ok) {
       set({ kind: "licensed", payload: v.payload });
       return status;
@@ -88,7 +92,7 @@ export async function refreshLicense(now = Date.now()): Promise<LicenseStatus> {
 
 /** Verify and save a code. Returns an error message, or null when activated. */
 export async function activateLicense(raw: string): Promise<string | null> {
-  const v = verifyLicense(raw);
+  const v = verifyLicense(raw, await getDeviceId());
   if (!v.ok) return v.error;
   if (!(await storage.setItem(LICENSE_KEY, normaliseCode(raw)))) return "Gagal menyimpan lisensi di perangkat ini. Coba lagi.";
   await refreshLicense();

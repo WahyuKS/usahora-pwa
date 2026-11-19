@@ -77,7 +77,7 @@ export function receiptBytes(sale: Sale, b: Business | null, customer: Contact |
   if (b?.phone) p.line(b.phone);
   p.align("left").line(rule);
   p.line(sale.number).line(fmtDateTime(sale.created_at));
-  if (sale.cashier_name) p.line(`Kasir: ${sale.cashier_name}`);
+  if (sale.cashier_name) p.line(`Dilayani: ${sale.cashier_name}`);
   if (customer) p.line(`Pelanggan: ${customer.name}`);
   p.line(rule);
   for (const i of sale.items) {

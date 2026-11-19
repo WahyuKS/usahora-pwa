@@ -67,7 +67,7 @@ export default function POS() {
 
   const bottomChrome = usesNativeTabs ? insets.bottom : 0;
   return (
-    <Screen tab back={false} title="Kasir" subtitle={`${products.length} produk aktif`} scroll={false} right={<><IconButton icon="scan-barcode" bg={colors.brandTertiary} color={colors.brandPrimary} onPress={() => setScan(true)} testID="pos-scan-button" label="Scan barcode" /><SyncPill /></>} testID="pos-screen"
+    <Screen tab back={false} title="Jual" subtitle={`Catat penjualan · ${products.length} produk aktif`} scroll={false} right={<><IconButton icon="scan-barcode" bg={colors.brandTertiary} color={colors.brandPrimary} onPress={() => setScan(true)} testID="pos-scan-button" label="Scan barcode" /><SyncPill /></>} testID="pos-screen"
       headerExtra={
         <View style={{ marginHorizontal: -spacing.sm }}>
           <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}>

@@ -1,4 +1,5 @@
-// Design tokens for USAHORA (light theme). Keys match /app/design_guidelines.json "color".
+// Design tokens for USAHORA (light theme). Refreshed "fresh & elegant" palette: USAHORA blue stays the
+// brand colour; softer cool-neutral canvas, midnight navy for hero surfaces, emerald for profit.
 import { useMemo } from "react";
 import { Appearance, StyleSheet, useColorScheme } from "react-native";
 
@@ -6,48 +7,48 @@ export type ColorScheme = "light" | "dark";
 
 const light = {
   surface: "#FFFFFF",
-  onSurface: "#0F172A",
-  surfaceSecondary: "#F8FAFC",
-  onSurfaceSecondary: "#0F172A",
-  surfaceTertiary: "#F1F5F9",
-  onSurfaceTertiary: "#0F172A",
-  surfaceInverse: "#0F172A",
+  onSurface: "#0E1726",
+  surfaceSecondary: "#F4F6FB",
+  onSurfaceSecondary: "#0E1726",
+  surfaceTertiary: "#EDF1F7",
+  onSurfaceTertiary: "#0E1726",
+  surfaceInverse: "#0B1630",
   onSurfaceInverse: "#FFFFFF",
-  muted: "#64748B",
+  muted: "#667085",
 
   brand: "#2563EB",
   onBrand: "#FFFFFF",
   brandPrimary: "#2563EB",
   onBrandPrimary: "#FFFFFF",
-  brandSecondary: "#DBEAFE",
+  brandSecondary: "#DDE7FF",
   onBrandSecondary: "#1E3A8A",
-  brandTertiary: "#EFF6FF",
+  brandTertiary: "#EEF3FF",
   onBrandTertiary: "#2563EB",
 
-  success: "#16A34A",
+  success: "#0E9F6E",
   onSuccess: "#FFFFFF",
-  successSoft: "#DCFCE7",
+  successSoft: "#E3F7EE",
   warning: "#F59E0B",
   onWarning: "#FFFFFF",
-  warningSoft: "#FEF3C7",
+  warningSoft: "#FFF3D6",
   warningText: "#B45309",
   error: "#DC2626",
   onError: "#FFFFFF",
-  errorSoft: "#FEE2E2",
+  errorSoft: "#FDE8E8",
   info: "#3B82F6",
   onInfo: "#FFFFFF",
 
-  border: "#E2E8F0",
-  borderStrong: "#CBD5E1",
-  divider: "#E2E8F0",
-  overlay: "rgba(15,23,42,0.45)",
-  shadow: "#0F172A",
+  border: "#E6EAF1",
+  borderStrong: "#D0D7E2",
+  divider: "#EDF0F5",
+  overlay: "rgba(11,22,48,0.45)",
+  shadow: "#0B1630",
 };
 
 export type ThemeColors = typeof light;
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 };
-export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
+export const radius = { sm: 8, md: 14, lg: 20, pill: 999 };
 export const fonts = {
   regular: "Inter-Regular",
   medium: "Inter-Medium",

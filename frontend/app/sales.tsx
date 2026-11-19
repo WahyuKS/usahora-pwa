@@ -32,7 +32,7 @@ export default function Sales() {
         </View>
       }>
       {list.length === 0 ? (
-        <EmptyState icon="receipt" title="Belum ada transaksi" message="Transaksi dari menu Kasir akan muncul di sini." action="Buka kasir" onAction={() => router.push("/pos")} testID="sales-empty" />
+        <EmptyState icon="receipt" title="Belum ada transaksi" message="Penjualan dari menu Jual akan muncul di sini." action="Catat penjualan" onAction={() => router.push("/pos")} testID="sales-empty" />
       ) : (
         <Card style={{ paddingVertical: spacing.xs }}>
           {list.slice(0, 300).map((s, i) => {

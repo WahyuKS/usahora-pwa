@@ -1,3 +1,4 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { useWindowDimensions, View } from "react-native";
@@ -23,6 +24,33 @@ function Kpi({ label, value, icon, tone, sub, testID, width }: { label: string; 
       <T v="h3" weight="bold" numberOfLines={1} style={{ marginTop: spacing.sm }} testID={`${testID}-value`}>{value}</T>
       {sub ? <T v="caption" numberOfLines={1} style={{ marginTop: 2 }}>{sub}</T> : null}
     </Card>
+  );
+}
+
+/** Owner hero: the number that matters most (net profit), with what produced it. */
+function ProfitHero({ s, periodLabel, onSell }: { s: { net: number; omzet: number; gross: number; opex: number; count: number }; periodLabel: string; onSell: () => void }) {
+  const stat = (label: string, value: string, testID: string) => (
+    <View style={{ flex: 1, minWidth: 0 }} testID={testID}>
+      <T v="caption" color="rgba(255,255,255,0.68)" numberOfLines={1}>{label}</T>
+      <T v="label" color="#FFFFFF" numberOfLines={1} style={{ marginTop: 2 }}>{value}</T>
+    </View>
+  );
+  return (
+    <LinearGradient colors={["#0B1630", "#1B3A8F", "#2563EB"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: radius.lg, padding: spacing.xl, marginBottom: spacing.md, overflow: "hidden" }} testID="profit-hero">
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <T v="caption" color="rgba(255,255,255,0.75)" style={{ letterSpacing: 0.6 }}>UNTUNG BERSIH · {periodLabel.toUpperCase()}</T>
+        <View style={{ backgroundColor: "rgba(255,255,255,0.14)", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 }}>
+          <T v="caption" color="#FFFFFF">{s.count} transaksi</T>
+        </View>
+      </View>
+      <T v="display" color={s.net >= 0 ? "#FFFFFF" : "#FCA5A5"} numberOfLines={1} style={{ marginTop: spacing.sm, fontSize: 34, letterSpacing: -0.5 }} testID="profit-hero-value">{rp(s.net)}</T>
+      <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.14)" }}>
+        {stat("Omzet", rp(s.omzet), "profit-hero-omzet")}
+        {stat("Laba kotor", rp(s.gross), "profit-hero-gross")}
+        {stat("Pengeluaran", rp(s.opex), "profit-hero-opex")}
+      </View>
+      <Button title="Catat penjualan" icon="shopping-bag" variant="secondary" onPress={onSell} style={{ marginTop: spacing.lg }} testID="profit-hero-sell" />
+    </LinearGradient>
   );
 }
 
@@ -102,6 +130,7 @@ export default function Dashboard() {
           </View>
         </Card>
       ) : null}
+      {!isEmpty ? <ProfitHero s={data.s} periodLabel={PERIODS.find((p) => p.key === period)?.label ?? ""} onSell={() => router.push("/pos")} /> : null}
       {hasDemo(db) ? (
         <Card style={{ backgroundColor: colors.warningSoft, borderColor: colors.warningSoft, marginBottom: spacing.md, padding: spacing.md }} onPress={() => router.push("/settings")} testID="demo-banner">
           <T v="label" color={colors.warningText}>Mode demo aktif — angka di bawah adalah data contoh. Ketuk untuk menghapus.</T>
@@ -120,7 +149,7 @@ export default function Dashboard() {
       </View>
 
       <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg }}>
-        <Button title="Transaksi" icon="shopping-cart" onPress={() => router.push("/pos")} style={{ flex: 1 }} testID="quick-new-sale" />
+        <Button title="Jual" icon="shopping-bag" onPress={() => router.push("/pos")} style={{ flex: 1 }} testID="quick-new-sale" />
         <Button title="Pengeluaran" icon="wallet" variant="secondary" onPress={() => router.push({ pathname: "/finance", params: { add: "expense" } })} style={{ flex: 1 }} testID="quick-add-expense" />
       </View>
 

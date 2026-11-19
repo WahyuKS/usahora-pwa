@@ -17,7 +17,8 @@ Pada mode lokal:
 - Foto produk/logo, backup cloud, akun karyawan, dan sinkronisasi disembunyikan (butuh server).
 - "Keluar" lalu masuk lagi membuka **data usaha yang sama** di perangkat itu.
 - Pengguna wajib rutin **Ekspor backup JSON** (Pengaturan → Backup & restore); dashboard mengingatkan bila belum backup 7 hari.
-- Masa coba 14 hari, lalu aktivasi kode lisensi sekali bayar. Lihat [SELLING.md](SELLING.md).
+- Masa coba 14 hari, lalu aktivasi kode lisensi sekali bayar yang terikat ID perangkat. Lihat [SELLING.md](SELLING.md).
+- Khusus pemilik: menu **Jual** (dulu "Kasir") menampilkan **untung dan margin** setiap transaksi sebelum disimpan; dashboard menonjolkan **Untung bersih**.
 - Beberapa perangkat: Impor backup (pindah) dan "Gabungkan dari perangkat lain" (manual, tanpa server).
 - Struk ke printer thermal Bluetooth (BLE, 58 mm) lewat Chrome/Edge di Android atau laptop.
 

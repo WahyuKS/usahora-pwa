@@ -5,10 +5,12 @@ Panduan untuk penjual: lisensi, masa coba, hosting, dan informasi jujur untuk pe
 ## 1. Alur penjualan
 
 1. Pembeli membuka website USAHORA → **masa coba gratis 14 hari** (semua fitur).
-2. Pembeli membayar (Lynk.id, Shopee, transfer, dll.).
-3. Anda membuat **kode lisensi** untuk pembeli itu (langkah 2) dan mengirimkannya (WA/email).
+2. Pembeli membayar (Lynk.id, Shopee, transfer, dll.) dan mengirim **ID perangkat** yang tampil di
+   **Lainnya → Lisensi** (contoh `JPZR-MR83-BT38`; ada tombol "Kirim via WhatsApp" berisi pesan siap kirim).
+3. Anda membuat **kode lisensi untuk ID perangkat itu** (langkah 2) dan mengirimkannya.
 4. Pembeli menempel kode di **Lainnya → Lisensi** (atau di layar "Aktifkan USAHORA" setelah masa coba habis).
 5. Lisensi dicek di perangkat **tanpa internet**, berlaku seumur hidup, tanpa langganan.
+   **Kode hanya berlaku di perangkat itu**: jika dibagikan, kode ditolak di perangkat lain.
 
 Setelah masa coba habis tanpa lisensi, aplikasi menampilkan layar aktivasi. **Data pembeli tidak
 dihapus** dan tombol **Ekspor backup data** tetap tersedia.
@@ -24,10 +26,18 @@ node tools/license-sign/sign.js init
 Untuk setiap pembeli:
 
 ```bash
-node tools/license-sign/sign.js issue --name "Toko Maju Jaya" --order "SHP-12345"
+node tools/license-sign/sign.js issue --name "Toko Maju Jaya" --device JPZR-MR83-BT38 --order "SHP-12345"
 ```
 
-Kirim baris yang diawali `USAHORA-...` ke pembeli. Nama pada lisensi tampil di aplikasi
+Kirim baris yang diawali `USAHORA-...` ke pembeli. `--device` wajib. Catat nomor order + ID perangkat
+(misalnya di spreadsheet) supaya Anda tahu berapa perangkat yang sudah diberi kode per pembeli.
+
+### Kebijakan perangkat (saran)
+
+- 1 lisensi = **2 perangkat** (misalnya HP + laptop): buat 2 kode dengan `--order` yang sama.
+- **Ganti perangkat / data browser terhapus** → ID perangkat berubah. Buat kode baru untuk ID baru
+  (saran: gratis, maksimal 3 kali per tahun). Pembeli memulihkan datanya dengan Impor backup.
+- Kode lama tanpa ID perangkat (dibuat sebelum fitur ini) **tidak berlaku lagi**. Nama pada lisensi tampil di aplikasi
 ("Dilisensikan untuk Toko Maju Jaya"), jadi gunakan nama pembeli/usahanya.
 
 Cek kode (untuk bantuan pembeli): `node tools/license-sign/sign.js verify <kode>`
@@ -62,7 +72,7 @@ Tanpa variabel itu, aplikasi menulis "Hubungi penjual USAHORA tempat Anda membel
 | Beberapa perangkat | Tidak ada sinkronisasi otomatis. Bisa **pindah perangkat** (Impor backup) dan **menggabungkan data** dari perangkat lain secara manual (Pengaturan → Gabungkan dari perangkat lain). Penghapusan tidak ikut tergabung. |
 | Printer Bluetooth | Struk 58 mm ESC/POS lewat **Chrome/Edge di Android atau laptop** dengan printer BLE. **Tidak bisa di iPhone** (Safari tidak mendukung Bluetooth web). Printer Bluetooth klasik (non-BLE) tidak terjangkau dari browser. Alternatif selalu ada: Cetak / Bagikan PDF. |
 | Foto produk, akun karyawan, backup cloud | Tidak tersedia di versi tanpa server. |
-| Lisensi | Satu kode bisa diketik di beberapa perangkat (dicek offline, tidak ada server). Nama pembeli tampil di aplikasi sebagai pencegah berbagi. |
+| Lisensi | Satu kode untuk satu ID perangkat, dicek offline. Hapus data browser / install ulang = ID baru, minta kode baru ke penjual. |
 | Enkripsi | Data di perangkat tidak dienkripsi khusus; lindungi HP dengan kunci layar. |
 
 ### Teks FAQ siap pakai
