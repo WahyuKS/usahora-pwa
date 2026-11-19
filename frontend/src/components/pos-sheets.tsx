@@ -54,7 +54,7 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
   const quick = [total, Math.ceil(total / 50000) * 50000, Math.ceil(total / 100000) * 100000].filter((v, i, a) => v > 0 && a.indexOf(v) === i);
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Pembayaran" testID="checkout-sheet"
+    <Sheet visible={visible} onClose={onClose} title={isOwner ? "Ringkasan penjualan" : "Pembayaran"} testID="checkout-sheet"
       footer={
         <View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: spacing.sm }}>
@@ -69,7 +69,7 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
               <T v="label" color={prof.profit >= 0 ? colors.success : colors.error} testID="checkout-profit-value">{rp(prof.profit)} · {pct(prof.margin)}</T>
             </View>
           ) : null}
-          <Button title={short > 0 && customer ? `Simpan (piutang ${rp(short)})` : "Simpan transaksi"} icon="circle-check" size="lg" testID="checkout-confirm-button"
+          <Button title={short > 0 && customer ? `Simpan (piutang ${rp(short)})` : "Simpan penjualan"} icon="circle-check" size="lg" testID="checkout-confirm-button"
             onPress={() => onPay({ discount: toNum(discount), method, received: rec, customer_id: customer?.id ?? null, note })} />
         </View>
       }>
@@ -81,6 +81,17 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
               <Pressable onPress={() => setItemDisc(itemDisc === l.product.id ? null : l.product.id)} testID={`cart-line-${i}-discount-toggle`}>
                 <T v="caption" color={l.discount ? colors.success : colors.brandPrimary}>{rp(l.product.sell_price)} · {l.discount ? `diskon ${rp(l.discount)}` : "+ diskon item"}</T>
               </Pressable>
+              {isOwner ? (() => {
+                const lineProfit = l.qty * (l.product.sell_price - (l.product.cost_price || 0)) - l.discount;
+                const left = (stock[l.product.id] ?? 0) - l.qty;
+                return (
+                  <T v="caption" numberOfLines={2} testID={`cart-line-${i}-owner`}>
+                    {l.product.cost_price ? <T v="caption" color={lineProfit >= 0 ? colors.success : colors.error}>{lineProfit >= 0 ? "untung" : "rugi"} {rp(Math.abs(lineProfit))}</T> : <T v="caption" color={colors.warningText}>modal belum diisi</T>}
+                    {" · "}
+                    <T v="caption" color={left <= 0 ? colors.error : left <= l.product.min_stock ? colors.warningText : colors.muted}>{left <= 0 ? "stok habis setelah ini" : `sisa stok ${left} ${l.product.unit}`}</T>
+                  </T>
+                );
+              })() : null}
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }}>
               <IconButton icon={l.qty === 1 ? "trash-2" as any : "minus"} onPress={() => setQty(l.product.id, l.qty - 1)} testID={`cart-line-${i}-minus`} color={l.qty === 1 ? colors.error : undefined} />
@@ -101,7 +112,24 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
         <T v="label" testID="checkout-subtotal">{rp(subtotal)}</T>
       </View>
       <Field money label="Diskon transaksi" value={discount} onChangeText={setDiscount} placeholder="0" testID="checkout-discount-input" />
-      <T v="label" style={{ marginBottom: 6 }}>Metode pembayaran</T>
+      {isOwner && total > 0 ? (
+        <View testID="checkout-owner-breakdown" style={{ backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg }}>
+          <T v="label" style={{ marginBottom: spacing.sm }}>Rincian untung</T>
+          {[
+            ["Penjualan (omzet)", rp(prof.revenue), colors.onSurface],
+            ["Modal barang", `-${rp(prof.cost)}`, colors.muted],
+            ["Untung", rp(prof.profit), prof.profit >= 0 ? colors.success : colors.error],
+            ["Margin", pct(prof.margin), prof.profit >= 0 ? colors.success : colors.error],
+          ].map(([label, value, color], i) => (
+            <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 3, borderTopWidth: i === 2 ? 1 : 0, borderTopColor: colors.border, marginTop: i === 2 ? 4 : 0, paddingTop: i === 2 ? 7 : 3 }}>
+              <T v={i >= 2 ? "label" : "body"} color={i >= 2 ? (color as string) : colors.muted}>{label}</T>
+              <T v="label" color={color as string} testID={`checkout-owner-${i}`}>{value}</T>
+            </View>
+          ))}
+          {prof.missingCost ? <T v="caption" color={colors.warningText} style={{ marginTop: spacing.xs }}>{prof.missingCost} produk belum punya harga modal, jadi untung terlihat lebih besar. Lengkapi di menu Produk.</T> : null}
+        </View>
+      ) : null}
+      <T v="label" style={{ marginBottom: 6 }}>{isOwner ? "Pembayaran dari pembeli" : "Metode pembayaran"}</T>
       <Segment options={METHODS} value={method} onChange={setMethod} testIDPrefix="checkout-method" />
       <Field money label={method === "tunai" ? "Uang diterima" : "Jumlah dibayar"} value={received} onChangeText={setReceived} placeholder={method === "tunai" ? "0" : String(total)} testID="checkout-received-input"
         help={method !== "tunai" ? "Kosongkan bila dibayar penuh" : undefined} />

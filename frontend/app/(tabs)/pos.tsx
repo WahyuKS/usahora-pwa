@@ -8,10 +8,11 @@ import { Button, Chips, EmptyState, IconButton, Screen, SearchBar, SyncPill, T, 
 import { BarcodeScanner, Thumb } from "@/src/components/media";
 import { CheckoutSheet, ReceiptSheet } from "@/src/components/pos-sheets";
 import { checkout, type CartLine } from "@/src/data/actions";
-import { paidMap, stockMap } from "@/src/data/selectors";
+import { paidMap, stockMap, summary } from "@/src/data/selectors";
 import { useDB } from "@/src/data/store";
 import type { Product, Sale } from "@/src/data/types";
 import { rp } from "@/src/lib/format";
+import { cartProfit, pct } from "@/src/lib/profit";
 import { usesNativeTabs } from "@/src/navigation";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,7 +22,7 @@ export default function POS() {
   const router = useRouter();
   const { colors } = useTheme();
   const { toast } = useUI();
-  const { business } = useAuth();
+  const { business, isOwner } = useAuth();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [q, setQ] = useState("");
@@ -45,6 +46,14 @@ export default function POS() {
   const qtyOf = (id: string) => cart.find((l) => l.product.id === id)?.qty ?? 0;
   const count = cart.reduce((a, l) => a + l.qty, 0);
   const total = cart.reduce((a, l) => a + l.qty * l.product.sell_price - l.discount, 0);
+  const cartProf = cartProfit(cart, 0);
+  // Owner view: what was sold today, per product and in total.
+  const today = useMemo(() => summary(db, "today"), [db]);
+  const soldToday = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const s of today.sales as Sale[]) for (const i of s.items) m[i.product_id] = (m[i.product_id] ?? 0) + i.qty;
+    return m;
+  }, [today]);
 
   const add = (p: Product) => {
     const cur = qtyOf(p.id);
@@ -77,7 +86,7 @@ export default function POS() {
         </View>
       }>
       {products.length === 0 ? (
-        <EmptyState icon="package" title="Belum ada produk" message="Tambahkan produk terlebih dahulu agar bisa dijual di kasir." action="Tambah produk" onAction={() => router.push("/product-form")} testID="pos-empty" />
+        <EmptyState icon="package" title="Belum ada produk" message="Tambahkan produk terlebih dahulu agar bisa dicatat penjualannya." action="Tambah produk" onAction={() => router.push("/product-form")} testID="pos-empty" />
       ) : (
         <FlatList
           key={cols}
@@ -85,6 +94,20 @@ export default function POS() {
           numColumns={cols}
           keyExtractor={(p) => p.id}
           contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xl, maxWidth: 1040, width: "100%", alignSelf: "center" }}
+          ListHeaderComponent={isOwner ? (
+            <View testID="pos-today" style={{ flexDirection: "row", backgroundColor: colors.surfaceInverse, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.xs }}>
+              {[
+                ["Omzet hari ini", rp(today.omzet), "#FFFFFF"],
+                ["Untung penjualan", rp(today.gross), today.gross >= 0 ? "#6EE7B7" : "#FCA5A5"],
+                ["Transaksi", String(today.count), "#FFFFFF"],
+              ].map(([label, value, color], i) => (
+                <View key={label} style={{ flex: i === 2 ? 0.7 : 1, minWidth: 0, paddingLeft: i ? spacing.md : 0, borderLeftWidth: i ? 1 : 0, borderLeftColor: "rgba(255,255,255,0.14)" }}>
+                  <T v="caption" color="rgba(255,255,255,0.7)" numberOfLines={1}>{label}</T>
+                  <T v="label" color={color} numberOfLines={1} style={{ marginTop: 2 }} testID={`pos-today-${i}`}>{value}</T>
+                </View>
+              ))}
+            </View>
+          ) : undefined}
           columnWrapperStyle={{ gap: spacing.sm }}
           ListEmptyComponent={<T v="caption" align="center" style={{ marginTop: spacing.xl }}>Produk tidak ditemukan.</T>}
           renderItem={({ item: p, index }) => {
@@ -100,7 +123,17 @@ export default function POS() {
                 </View>
                 <T v="label" numberOfLines={2} style={{ marginTop: spacing.sm }}>{p.name}</T>
                 <T v="label" weight="bold" color={colors.brandPrimary} style={{ marginTop: 2 }}>{rp(p.sell_price)}</T>
-                <T v="caption" color={out ? colors.error : st <= p.min_stock ? colors.warningText : colors.muted}>{out ? "Stok habis" : `Stok ${st} ${p.unit}`}</T>
+                {isOwner ? (
+                  p.cost_price > 0 ? (
+                    <T v="caption" color={p.sell_price - p.cost_price >= 0 ? colors.success : colors.error} numberOfLines={1} testID={`pos-product-profit-${index}`}>
+                      {p.sell_price - p.cost_price >= 0 ? "Untung" : "Rugi"} {rp(Math.abs(p.sell_price - p.cost_price))} · {pct((p.sell_price - p.cost_price) / (p.sell_price || 1))}
+                    </T>
+                  ) : <T v="caption" color={colors.warningText} numberOfLines={1}>Modal belum diisi</T>
+                ) : undefined}
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4, gap: 4 }}>
+                  <T v="caption" color={out ? colors.error : st <= p.min_stock ? colors.warningText : colors.muted} numberOfLines={1} style={{ flexShrink: 1 }}>{out ? "Stok habis" : st <= p.min_stock ? `Menipis · ${st} ${p.unit}` : `Stok ${st} ${p.unit}`}</T>
+                  {isOwner && soldToday[p.id] ? <T v="caption" color={colors.muted} numberOfLines={1}>{soldToday[p.id]} terjual</T> : null}
+                </View>
               </Pressable>
             );
           }}
@@ -110,11 +143,12 @@ export default function POS() {
         <View style={{ backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.lg, paddingBottom: bottomChrome + spacing.md }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, maxWidth: 1040, width: "100%", alignSelf: "center" }}>
             <Pressable onPress={() => setCart([])} testID="pos-clear-cart" hitSlop={8} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.xs }}><T v="label" color={colors.error}>Kosongkan</T></Pressable>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <T v="caption">{count} item</T>
               <T v="h3" weight="bold" testID="pos-cart-total" style={{ fontFamily: fonts.bold }}>{rp(total)}</T>
+              {isOwner ? <T v="caption" color={cartProf.profit >= 0 ? colors.success : colors.error} numberOfLines={1} testID="pos-cart-profit">{cartProf.profit >= 0 ? "Untung" : "Rugi"} {rp(Math.abs(cartProf.profit))}</T> : null}
             </View>
-            <Button title="Bayar" icon="banknote" size="lg" onPress={() => setCheckoutOpen(true)} testID="pos-pay-button" style={{ minWidth: 150 }} />
+            <Button title="Lanjut" icon="arrow-right" size="lg" onPress={() => setCheckoutOpen(true)} testID="pos-pay-button" style={{ minWidth: 140 }} />
           </View>
         </View>
       ) : null}
