@@ -45,6 +45,8 @@ export type Activity = Base & { type: string; message: string };
 export type Business = {
   id: string; name: string; address: string; phone: string; email: string; currency: string;
   invoice_footer: string; tax_enabled: boolean; tax_rate: number; bank_info: string; logo_file_id?: string | null;
+  /** Logo picked from the device, stored offline as a small data URL (shown in the app and on receipts/invoices/reports). */
+  logo_data_url?: string | null;
 };
 export type Role = "owner" | "cashier";
 export type User = { id: string; name: string; email: string; business_id: string; role?: Role };

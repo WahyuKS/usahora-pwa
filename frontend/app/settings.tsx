@@ -1,13 +1,14 @@
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Platform, Pressable, Switch, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
-import { Badge, Button, Card, Divider, Field, ListRow, Screen, SectionTitle, Segment, T, useUI } from "@/src/components/ui";
+import { Badge, Button, Card, Divider, Field, Icon, ListRow, Screen, SectionTitle, Segment, T, useUI } from "@/src/components/ui";
 import { buildBackup, clearDemo, loadDemo, mergeBackup, restoreBackup, validateBackup } from "@/src/data/actions";
 import { hasDemo } from "@/src/data/selectors";
-import { PhotoPicker } from "@/src/components/media";
+import { BusinessAvatar } from "@/src/components/media";
 import { StaffSection } from "@/src/components/staff";
 import { lastPersistError, setMeta, useDB } from "@/src/data/store";
 import { backupMessage, exportBackupNow, NOT_A_BACKUP } from "@/src/data/backup-export";
@@ -37,6 +38,7 @@ const STATUS_LABEL = { online: "Online", offline: "Offline — data tersimpan di
 
 export default function Settings() {
   const db = useDB();
+  const router = useRouter();
   const sync = useSync();
   const { business, updateBusiness, user, isOwner, isLocal } = useAuth();
   const [store, setStore] = useState<StorageInfo | null>(null);
@@ -206,29 +208,13 @@ export default function Settings() {
 
       {isOwner ? (<>
       <SectionTitle title="Profil usaha" />
-      <Card>
-        {isLocal ? null : <PhotoPicker fileId={b.logo_file_id} label="Logo usaha" testID="business-logo" onChange={async (id) => {
-          const next = { ...b, logo_file_id: id };
-          setB(next);
-          const r = await updateBusiness(next);
-          toast(r === "online" ? "Logo disimpan" : "Logo disimpan di perangkat, dikirim saat online", r === "online" ? "success" : "info");
-        }} />}
-        <Field label="Nama usaha *" value={b.name} onChangeText={set("name")} testID="business-name-input" />
-        <Field label="Alamat" value={b.address} onChangeText={set("address")} multiline testID="business-address-input" />
-        <View style={{ flexDirection: "row", gap: spacing.md }}>
-          <View style={{ flex: 1 }}><Field label="Telepon" value={b.phone} onChangeText={set("phone")} keyboardType="phone-pad" testID="business-phone-input" /></View>
-          <View style={{ flex: 1 }}><Field label="Email" value={b.email} onChangeText={set("email")} autoCapitalize="none" keyboardType="email-address" testID="business-email-input" /></View>
+      <Card testID="settings-profile-card" onPress={() => router.push("/profile")} style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+        <BusinessAvatar business={business} size={56} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <T v="h3" numberOfLines={1}>{business?.name ?? "Nama usaha"}</T>
+          <T v="caption" numberOfLines={2}>Logo, alamat, kontak, rekening, dan pajak untuk struk & invoice</T>
         </View>
-        <Field label="Mata uang" value="Rupiah (IDR) · format Rp1.500.000 · zona waktu Asia/Jakarta" editable={false} />
-        <SectionTitle title="Pengaturan invoice" />
-        <Field label="Info pembayaran / rekening" value={b.bank_info} onChangeText={set("bank_info")} multiline placeholder="Contoh: BCA 123456789 a.n. Toko Maju" testID="business-bank-input" />
-        <Field label="Catatan kaki invoice" value={b.invoice_footer} onChangeText={set("invoice_footer")} testID="business-footer-input" />
-        <Pressable onPress={() => set("tax_enabled")(!b.tax_enabled)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", minHeight: 48, marginBottom: spacing.md }}>
-          <T v="label">Pajak aktif secara default</T>
-          <Switch value={b.tax_enabled} onValueChange={set("tax_enabled")} testID="business-tax-switch" trackColor={{ true: colors.brandPrimary, false: colors.borderStrong }} />
-        </Pressable>
-        {b.tax_enabled ? <Field label="Tarif pajak (%)" value={String(b.tax_rate)} onChangeText={set("tax_rate")} keyboardType="decimal-pad" testID="business-taxrate-input" /> : null}
-        <Button title="Simpan profil" icon="check" onPress={saveProfile} loading={busy === "profile"} testID="business-save-button" />
+        <Icon name="chevron-right" size={20} color={colors.muted} />
       </Card>
 
       {isLocal ? null : <StaffSection />}

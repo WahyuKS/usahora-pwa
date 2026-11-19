@@ -1,4 +1,4 @@
-import { addDays, addMonths, dayKey, inRange, rangeOf, type Period } from "@/src/lib/format";
+import { addDays, addMonths, dayKey, inRange, isCustomPeriod, periodDays, rangeOf, type Period } from "@/src/lib/format";
 import type { DBState } from "./store";
 import { tracksStock, type Bill, type FinanceEntry, type Invoice, type Product, type Purchase, type Sale } from "./types";
 
@@ -81,14 +81,17 @@ export function inventoryValue(s: DBState) {
 /** Sales chart buckets: per day for short periods, per month for the year. */
 export function salesSeries(s: DBState, period: Period) {
   const r = rangeOf(period);
-  const byMonth = period === "year" || period === "all";
+  const custom = isCustomPeriod(period);
+  const byMonth = period === "year" || period === "all" || (custom && periodDays(period) > 62);
+  const lastKey = custom ? (period.to < dayKey() ? period.to : dayKey()) : dayKey();
   const buckets: { key: string; value: number }[] = [];
   if (byMonth) {
-    const startKey = period === "all" ? addMonths(dayKey(), -11).slice(0, 7) + "-01" : dayKey(r.start).slice(0, 4) + "-01-01";
-    for (let k = startKey; k <= dayKey(); k = addMonths(k, 1)) buckets.push({ key: k.slice(0, 7), value: 0 });
+    const startKey = custom ? period.from.slice(0, 7) + "-01" : period === "all" ? addMonths(dayKey(), -11).slice(0, 7) + "-01" : dayKey(r.start).slice(0, 4) + "-01-01";
+    for (let k = startKey; k <= lastKey; k = addMonths(k, 1)) buckets.push({ key: k.slice(0, 7), value: 0 });
   } else {
-    const start = period === "today" ? addDays(dayKey(), -6) : dayKey(r.start);
-    for (let k = start; k <= dayKey(); k = addDays(k, 1)) buckets.push({ key: k, value: 0 });
+    // A single day still shows the week up to it, so the chart has context.
+    const start = period === "today" ? addDays(dayKey(), -6) : custom && period.from === period.to ? addDays(period.from, -6) : dayKey(r.start);
+    for (let k = start; k <= (custom ? period.to : lastKey); k = addDays(k, 1)) buckets.push({ key: k, value: 0 });
   }
   const idx = new Map(buckets.map((b, i) => [b.key, i]));
   for (const sale of s.sales as Sale[]) {

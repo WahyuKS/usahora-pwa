@@ -7,7 +7,7 @@ import { AccessibilityInfo, Animated, Easing, Linking, Platform, Pressable, Scro
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/src/auth";
-import { Icon, useUI, type IconName } from "@/src/components/ui";
+import { Icon, Logo, useUI, type IconName } from "@/src/components/ui";
 import { backupMessage, exportBackupNow } from "@/src/data/backup-export";
 import { fonts } from "@/src/theme";
 
@@ -86,9 +86,7 @@ function BrandMark({ motion }: { motion: boolean }) {
   return (
     <View style={{ width: size + 24, height: size + 24, alignItems: "center", justifyContent: "center" }}>
       <Animated.View style={{ position: "absolute", width: size + 24, height: size + 24, borderRadius: (size + 24) / 2, backgroundColor: BLUE, opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.32] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.12] }) }] }} />
-      <LinearGradient colors={["#3B82F6", "#4F46E5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: size, height: size, borderRadius: size * 0.28, alignItems: "flex-end", justifyContent: "center", flexDirection: "row", gap: 5, paddingBottom: size * 0.24 }}>
-        {[0.28, 0.44, 0.6].map((h, i) => <View key={i} style={{ width: 7, height: size * h, borderRadius: 4, backgroundColor: WHITE, opacity: 0.55 + i * 0.22 }} />)}
-      </LinearGradient>
+      <Logo size={size} />
     </View>
   );
 }

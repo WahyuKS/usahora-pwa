@@ -2,8 +2,8 @@ import { useRouter, type Href } from "expo-router";
 import { View } from "react-native";
 
 import { useAuth } from "@/src/auth";
-import { Thumb } from "@/src/components/media";
-import { Badge, Card, Divider, ListRow, Screen, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
+import { BusinessAvatar } from "@/src/components/media";
+import { Badge, BrandLogo, Card, Divider, ListRow, Screen, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
 import { billsDue } from "@/src/data/selectors";
 import { useDB } from "@/src/data/store";
 import { spacing } from "@/src/theme";
@@ -21,7 +21,8 @@ export default function More() {
     {
       title: "Operasional",
       items: [
-        { title: "Riwayat Penjualan", sub: "Transaksi kasir & pelunasan piutang", icon: "receipt", href: "/sales" },
+        { title: "Riwayat Penjualan", sub: "Penjualan per tanggal & pelunasan", icon: "receipt", href: "/sales" },
+        { title: "Penagihan", sub: "Piutang pelanggan & janji bayar", icon: "hand-coins", href: "/collections" },
         { title: "Pembelian", sub: "Pembelian barang & penerimaan stok", icon: "truck", href: "/purchases" },
         { title: "Supplier", sub: "Data pemasok", icon: "store", href: "/suppliers" },
         { title: "Pelanggan", sub: "Data, riwayat, dan piutang", icon: "users", href: "/customers" },
@@ -40,6 +41,7 @@ export default function More() {
       title: "Lainnya",
       items: [
         { title: "Laporan", sub: "Penjualan, laba rugi, stok, ekspor", icon: "chart-column", href: "/reports" },
+        { title: "Riwayat Aktivitas", sub: "Semua catatan per tanggal", icon: "history", href: "/activities" },
         { title: "Dokumen & SOP", sub: "Template SOP dan checklist", icon: "book-open", href: "/docs" },
         { title: "Pengaturan", sub: "Profil usaha dan cadangan data", icon: "settings", href: "/settings" },
         ...(isLocal ? [{ title: "Lisensi", sub: "Status masa coba dan aktivasi", icon: "key-round" as IconName, href: "/license" as Href }] : []),
@@ -48,8 +50,8 @@ export default function More() {
   ];
   return (
     <Screen tab back={false} title="Lainnya" subtitle={user?.email || business?.name} right={<SyncPill />} testID="more-screen">
-      <Card style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.lg }} testID="profile-card" onPress={isOwner ? () => router.push("/settings") : undefined}>
-        {business?.logo_file_id ? <Thumb fileId={business.logo_file_id} size={56} /> : <Thumb label={business?.name ?? "U"} size={56} />}
+      <Card style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.lg }} testID="profile-card" onPress={isOwner ? () => router.push("/profile") : undefined}>
+        <BusinessAvatar business={business} size={56} testID="profile-card-logo" />
         <View style={{ flex: 1, minWidth: 0 }}>
           <T v="h3" numberOfLines={1} testID="profile-business-name">{business?.name ?? "USAHORA"}</T>
           <T v="caption" numberOfLines={1}>{user?.name} · {isOwner ? "Pemilik" : "Kasir"}</T>
@@ -78,7 +80,10 @@ export default function More() {
             if (ok) logout();
           }} />
       </Card>
-      <T v="caption" align="center" style={{ marginTop: spacing.xl }}>USAHORA · Manage smarter. Grow further.</T>
+      <View style={{ alignItems: "center", marginTop: spacing.xl, gap: spacing.xs }}>
+        <BrandLogo height={26} plate />
+        <T v="caption" align="center">Manage smarter. Grow further.</T>
+      </View>
     </Screen>
   );
 }

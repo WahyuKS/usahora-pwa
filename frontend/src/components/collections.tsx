@@ -77,7 +77,7 @@ export function CollectionsCard() {
           </View>
         );
       })}
-      {data.items.length > top.length ? <T v="caption" style={{ marginTop: spacing.sm }}>+{data.items.length - top.length} lainnya di menu Pelanggan</T> : null}
+      <Button size="sm" variant="ghost" icon="arrow-right" title={data.items.length > top.length ? `Lihat semua tagihan (${data.items.length})` : "Buka halaman penagihan"} style={{ marginTop: spacing.sm }} onPress={() => router.push("/collections")} testID="collections-see-all" />
       {perm === "default" ? (
         <Button size="sm" variant="ghost" icon="bell" title="Aktifkan notifikasi tagihan" style={{ marginTop: spacing.sm }} testID="collections-enable-notify"
           onPress={async () => {

@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { View } from "react-native";
 
+import { PeriodPicker } from "@/src/components/period-picker";
+import { logActivity } from "@/src/data/actions";
 import { Button, Card, Chips, Divider, EmptyState, PickerSheet, Screen, T, useUI } from "@/src/components/ui";
 import { inventoryValue, payables, receivables, stockMap, summary, topProducts } from "@/src/data/selectors";
 import { useDB, type DBState } from "@/src/data/store";
 import { tracksStock, type FinanceEntry, type Product, type Purchase, type Sale } from "@/src/data/types";
 import { useAuth } from "@/src/auth";
-import { methodLabel } from "@/src/lib/docs";
+import { logoImg, methodLabel } from "@/src/lib/docs";
 import { exportCSV, sharePdf, tableHtml, wrapHtml, html as esc } from "@/src/lib/export";
-import { dayKey, fmtDate, fmtDateTime, inRange, PERIODS, rangeOf, rp, type Period } from "@/src/lib/format";
+import { dayKey, fmtDate, fmtDateTime, inRange, periodLabel, rangeOf, rp, type Period } from "@/src/lib/format";
 import { spacing, useTheme } from "@/src/theme";
 
 type RType = "sales" | "pl" | "expense" | "purchase" | "stock" | "top" | "customer" | "receivable" | "payable" | "cash";
@@ -99,14 +101,15 @@ export default function Reports() {
   const rep = useMemo(() => build(db, t, period, cat, product?.id ?? null), [db, t, period, cat, product]);
   const cats = [{ key: "all", label: "Semua kategori" }, ...[...new Set(db.products.map((p: Product) => p.category || "Umum"))].map((c) => ({ key: c as string, label: c as string }))];
   const title = `Laporan ${TYPES.find((x) => x.key === t)!.label}`;
-  const periodLabel = PERIODS.find((p) => p.key === period)!.label;
+  const periodText = periodLabel(period);
   const usesCat = t === "sales" || t === "stock" || t === "top";
 
   const exportIt = async (kind: "csv" | "pdf") => {
     try {
       const fname = `usahora-${t}-${dayKey()}`;
       if (kind === "csv") await exportCSV(fname, rep.headers, rep.rows);
-      else await sharePdf(wrapHtml(title, `<div class="brand">${esc(business?.name ?? "USAHORA")}</div><h1>${esc(title)}</h1><div class="muted">Periode: ${esc(periodLabel)} · dicetak ${esc(fmtDateTime(new Date()))}</div>${tableHtml(rep.headers, rep.rows, rep.right)}${rep.total ? `<h2>Total: ${esc(rep.total)}</h2>` : ""}${rep.note ? `<p class="muted">${esc(rep.note)}</p>` : ""}`), fname);
+      else await sharePdf(wrapHtml(title, `${logoImg(business, 48)}<div class="brand">${esc(business?.name ?? "USAHORA")}</div><h1>${esc(title)}</h1><div class="muted">Periode: ${esc(periodText)} · dicetak ${esc(fmtDateTime(new Date()))}</div>${tableHtml(rep.headers, rep.rows, rep.right)}${rep.total ? `<h2>Total: ${esc(rep.total)}</h2>` : ""}${rep.note ? `<p class="muted">${esc(rep.note)}</p>` : ""}`), fname);
+      logActivity("report", `Ekspor laporan ${title} (${periodText}) sebagai ${kind.toUpperCase()}`);
       toast(kind === "csv" ? "CSV siap (bisa dibuka di Excel)" : "PDF siap");
     } catch {
       toast("Gagal mengekspor laporan", "error");
@@ -114,10 +117,10 @@ export default function Reports() {
   };
 
   return (
-    <Screen title="Laporan" subtitle={`${title} · ${periodLabel}`} testID="reports-screen"
+    <Screen title="Laporan" subtitle={`${title} · ${periodText}`} testID="reports-screen"
       headerExtra={<View style={{ marginHorizontal: -spacing.sm }}>
         <Chips options={TYPES} value={t} onChange={setT} testIDPrefix="report-type" />
-        {t !== "stock" && t !== "receivable" && t !== "payable" ? <Chips options={PERIODS} value={period} onChange={setPeriod} testIDPrefix="report-period" style={{ marginTop: -spacing.sm }} /> : null}
+        {t !== "stock" && t !== "receivable" && t !== "payable" ? <PeriodPicker value={period} onChange={setPeriod} testIDPrefix="report-period" style={{ marginTop: -spacing.sm }} /> : null}
       </View>}>
       {usesCat ? <View style={{ marginHorizontal: -spacing.lg }}><Chips options={cats} value={cat} onChange={setCat} testIDPrefix="report-category" /></View> : null}
       {t === "sales" ? <Button size="sm" variant="outline" icon="package" title={product ? `Produk: ${product.name}` : "Filter produk"} onPress={() => (product ? setProduct(null) : setPick(true))} testID="report-product-filter" style={{ alignSelf: "flex-start", marginBottom: spacing.md }} /> : null}

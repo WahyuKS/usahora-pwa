@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getLocalWorkspace, useAuth, type LocalWorkspace } from "@/src/auth";
 import { CLOUD_ENABLED } from "@/src/lib/api";
-import { Button, Card, Field, Logo, T } from "@/src/components/ui";
+import { BrandLogo, Button, Card, Field, T } from "@/src/components/ui";
 import { spacing, useTheme } from "@/src/theme";
 
 export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
@@ -17,8 +17,7 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
       <KeyboardAwareScrollView bottomOffset={24} keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, paddingTop: insets.top + spacing.xxl, paddingBottom: insets.bottom + spacing.xl, paddingHorizontal: spacing.lg }}>
         <View style={{ width: "100%", maxWidth: 440, alignSelf: "center" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-            <Logo size={44} />
-            <T v="h2" color={colors.onSurfaceInverse} style={{ letterSpacing: 2 }}>USAHORA</T>
+            <BrandLogo height={34} plate />
           </View>
           <T v="display" color={colors.onSurfaceInverse} style={{ marginTop: spacing.xxl }}>Manage smarter.{"\n"}Grow further.</T>
           <T v="body" color="rgba(255,255,255,0.72)" style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>Aplikasi pemilik usaha: catat penjualan, untung bersih, stok, piutang, dan laporan dalam satu aplikasi yang tetap jalan saat offline.</T>

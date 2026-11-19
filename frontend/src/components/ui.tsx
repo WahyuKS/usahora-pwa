@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import {
-  ActivityIndicator, Animated, Modal, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View,
+  ActivityIndicator, Animated, Image, Modal, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View,
   type StyleProp, type TextStyle, type ViewStyle,
 } from "react-native";
 import { KeyboardAvoidingView, KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -116,15 +116,15 @@ export function IconTile({ name, tone = "brand", size = 40 }: { name: IconName; 
   );
 }
 
-export function ListRow({ icon, tone, title, subtitle, right, rightSub, onPress, testID }: {
-  icon?: IconName; tone?: ComponentProps<typeof IconTile>["tone"]; title: string; subtitle?: string; right?: string; rightSub?: ReactNode; onPress?: () => void; testID?: string;
+export function ListRow({ icon, tone, title, subtitle, right, rightSub, onPress, testID, titleLines = 1 }: {
+  titleLines?: number; icon?: IconName; tone?: ComponentProps<typeof IconTile>["tone"]; title: string; subtitle?: string; right?: string; rightSub?: ReactNode; onPress?: () => void; testID?: string;
 }) {
   const { colors } = useTheme();
   return (
     <Pressable testID={testID} disabled={!onPress} onPress={onPress} style={({ pressed }) => [{ flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md, minHeight: 56 }, pressed && { opacity: 0.7 }]}>
       {icon ? <IconTile name={icon} tone={tone} /> : null}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <T v="label" numberOfLines={1}>{title}</T>
+        <T v="label" numberOfLines={titleLines}>{title}</T>
         {subtitle ? <T v="caption" numberOfLines={1} style={{ marginTop: 2 }}>{subtitle}</T> : null}
       </View>
       {right !== undefined || rightSub ? (
@@ -272,17 +272,25 @@ export function Loading() {
 }
 
 // ---------------- Logo ----------------
-export function Logo({ size = 40, inverse }: { size?: number; inverse?: boolean }) {
-  const { colors } = useTheme();
-  const bar = inverse ? colors.brandPrimary : colors.onBrandPrimary;
-  const w = size * 0.13;
+// Official USAHORA logo (generated from assets/brand/usahora-logo-source.png by scripts/generate-pwa-icons.js).
+const LOGO_MARK = require("../../assets/brand/usahora-mark.png");
+const LOGO_FULL = require("../../assets/brand/usahora-logo.png");
+const LOGO_FULL_RATIO = 406 / 148;
+
+/** USAHORA shield mark on a white tile: readable on light and dark backgrounds. */
+export function Logo({ size = 40 }: { size?: number; inverse?: boolean }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size * 0.28, backgroundColor: inverse ? colors.surface : colors.brandPrimary, alignItems: "flex-end", justifyContent: "center", flexDirection: "row", gap: w * 0.7, paddingBottom: size * 0.24 }}>
-      {[0.28, 0.44, 0.6].map((h, i) => (
-        <View key={i} style={{ width: w, height: size * h, borderRadius: w / 2, backgroundColor: bar, opacity: 0.55 + i * 0.22 }} />
-      ))}
+    <View accessibilityLabel="USAHORA" style={{ width: size, height: size, borderRadius: size * 0.28, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(10,15,30,0.06)" }}>
+      <Image source={LOGO_MARK} style={{ width: size * 0.74, height: size * 0.74 }} resizeMode="contain" />
     </View>
   );
+}
+
+/** Full USAHORA logo (mark + wordmark). The wordmark is navy, so on dark backgrounds use plate. */
+export function BrandLogo({ height = 32, plate }: { height?: number; plate?: boolean }) {
+  const img = <Image accessibilityLabel="USAHORA Business Management System" source={LOGO_FULL} style={{ height, width: height * LOGO_FULL_RATIO }} resizeMode="contain" />;
+  if (!plate) return img;
+  return <View style={{ alignSelf: "flex-start", backgroundColor: "#FFFFFF", borderRadius: height * 0.4, paddingHorizontal: height * 0.45, paddingVertical: height * 0.3 }}>{img}</View>;
 }
 
 // ---------------- Sync pill ----------------

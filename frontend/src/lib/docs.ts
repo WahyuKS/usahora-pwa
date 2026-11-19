@@ -6,8 +6,16 @@ import type { Business, Contact, Invoice, Sale } from "@/src/data/types";
 const METHOD: Record<string, string> = { tunai: "Tunai", transfer: "Transfer", qris: "QRIS", lainnya: "Lainnya" };
 export const methodLabel = (m: string) => METHOD[m] ?? m;
 
+/** Logo source for documents: the logo picked on this device, else the cloud file. */
+export const businessLogoSrc = (b: Business | null | undefined) => b?.logo_data_url || (b?.logo_file_id ? fileUrl(b.logo_file_id) : "");
+/** <img> for document headers (empty when the business has no logo). */
+export const logoImg = (b: Business | null | undefined, size = 56) => {
+  const src = businessLogoSrc(b);
+  return src ? `<img src="${esc(src)}" alt="" style="height:${size}px;width:${size}px;object-fit:contain;border-radius:12px;margin-bottom:8px;display:block"/>` : "";
+};
+
 const head = (b: Business | null) => `
-  <div class="row"><div>${b?.logo_file_id ? `<img src="${fileUrl(b.logo_file_id)}" style="height:48px;width:48px;object-fit:cover;border-radius:10px;margin-bottom:8px"/>` : ""}<div class="brand">${esc(b?.name ?? "USAHORA")}</div>
+  <div class="row"><div>${logoImg(b)}<div class="brand">${esc(b?.name ?? "USAHORA")}</div>
   <div class="muted">${esc(b?.address ?? "")}</div><div class="muted">${esc([b?.phone, b?.email].filter(Boolean).join(" · "))}</div></div>`;
 
 export function receiptHtml(sale: Sale, b: Business | null, customer: Contact | undefined, paid: number) {

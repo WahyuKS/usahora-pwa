@@ -48,12 +48,46 @@ const baseCss = `
 export const wrapHtml = (title: string, body: string) =>
   `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${esc(title)}</title><style>${baseCss}</style></head><body>${body}</body></html>`;
 
+/**
+ * Web: expo-print ignores the HTML and prints the current screen, so the document (receipt, invoice,
+ * report — with the business logo) is rendered in a hidden frame and printed from there.
+ * The browser dialog also offers "Save as PDF".
+ */
+export function printOnWeb(htmlStr: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    document.querySelectorAll("iframe[data-testid=print-frame]").forEach((f) => f.remove());
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("data-testid", "print-frame");
+    Object.assign(frame.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0", opacity: "0" });
+    frame.onload = () => {
+      const w = frame.contentWindow;
+      if (!w) return reject(new Error("Tidak bisa membuka dokumen untuk dicetak"));
+      // onload fires after images (logo) are loaded; give fonts a moment.
+      setTimeout(() => {
+        try {
+          w.focus();
+          w.print();
+          resolve();
+        } catch (e) {
+          reject(e);
+        } finally {
+          setTimeout(() => frame.remove(), 60_000);
+        }
+      }, 200);
+    };
+    frame.srcdoc = htmlStr;
+    document.body.appendChild(frame);
+  });
+}
+
 export async function printHtml(htmlStr: string) {
+  if (Platform.OS === "web") return printOnWeb(htmlStr);
   await Print.printAsync({ html: htmlStr });
 }
 
 export async function sharePdf(htmlStr: string, filename: string) {
-  if (Platform.OS === "web") return Print.printAsync({ html: htmlStr });
+  if (Platform.OS === "web") return printOnWeb(htmlStr);
   const { uri } = await Print.printToFileAsync({ html: htmlStr });
   await Sharing.shareAsync(uri, { mimeType: "application/pdf", UTI: "com.adobe.pdf", dialogTitle: filename });
 }

@@ -5,13 +5,14 @@ import { useWindowDimensions, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { BackupReminder } from "@/src/components/backup-reminder";
+import { PeriodPicker } from "@/src/components/period-picker";
 import { CollectionsCard } from "@/src/components/collections";
-import { Thumb } from "@/src/components/media";
-import { Badge, Button, Card, Chips, Divider, EmptyState, Icon, IconTile, ListRow, Logo, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
+import { BusinessAvatar } from "@/src/components/media";
+import { Badge, Button, Card, Divider, EmptyState, Icon, IconTile, ListRow, Logo, Screen, SectionTitle, SyncPill, T, useUI, type IconName } from "@/src/components/ui";
 import { loadDemo, payBill } from "@/src/data/actions";
 import { billsDue, hasDemo, lowStock, payables, receivables, salesSeries, summary, topProducts } from "@/src/data/selectors";
 import { setMeta, useDB } from "@/src/data/store";
-import { dayKey, fmtDate, fmtDateTime, monthLabel, PERIODS, rp, shortDay, type Period } from "@/src/lib/format";
+import { dayKey, fmtDate, fmtDateTime, fmtDayLong, monthLabel, periodLabel, rp, shortDay, type Period } from "@/src/lib/format";
 import { radius, spacing, useTheme } from "@/src/theme";
 
 function Kpi({ label, value, icon, tone, sub, testID, width }: { label: string; value: string; icon: IconName; tone?: "brand" | "success" | "warning" | "error" | "neutral"; sub?: string; testID: string; width: any }) {
@@ -95,7 +96,7 @@ export default function Dashboard() {
     };
   }, [db, period]);
   const isEmpty = db.products.length === 0 && db.sales.length === 0;
-  const logo = <View style={{ marginRight: spacing.sm }} testID="dashboard-business-logo">{business?.logo_file_id ? <Thumb fileId={business.logo_file_id} size={40} /> : <Logo size={40} />}</View>;
+  const logo = <View style={{ marginRight: spacing.sm }} testID="dashboard-business-logo">{business?.logo_data_url || business?.logo_file_id ? <BusinessAvatar business={business} size={40} /> : <Logo size={40} />}</View>;
 
   if (!isOwner) {
     const mine = data.today.sales.filter((s: any) => s.cashier_name === user?.name);
@@ -117,8 +118,8 @@ export default function Dashboard() {
   }
 
   return (
-    <Screen tab back={false} leading={logo} title={business?.name ?? "USAHORA"} subtitle={`Ringkasan usaha · ${fmtDate(new Date())}`} right={<SyncPill />} testID="dashboard-screen"
-      headerExtra={<Chips options={PERIODS.slice(0, 4)} value={period} onChange={setPeriod} testIDPrefix="dashboard-period" style={{ marginHorizontal: -spacing.sm }} />}>
+    <Screen tab back={false} leading={logo} title={business?.name ?? "USAHORA"} subtitle={`${fmtDayLong()} · Ringkasan ${periodLabel(period)}`} right={<SyncPill />} testID="dashboard-screen"
+      headerExtra={<PeriodPicker value={period} onChange={setPeriod} presets={["today", "7d", "month", "year"]} testIDPrefix="dashboard-period" style={{ marginHorizontal: -spacing.sm }} />}>
       <BackupReminder />
       {isEmpty ? (
         <Card testID="onboarding-card">
@@ -130,7 +131,7 @@ export default function Dashboard() {
         </Card>
       ) : null}
       {!isEmpty ? <CollectionsCard /> : null}
-      {!isEmpty ? <ProfitHero s={data.s} periodLabel={PERIODS.find((p) => p.key === period)?.label ?? ""} onSell={() => router.push("/pos")} /> : null}
+      {!isEmpty ? <ProfitHero s={data.s} periodLabel={periodLabel(period)} onSell={() => router.push("/pos")} /> : null}
       {hasDemo(db) ? (
         <Card style={{ backgroundColor: colors.warningSoft, borderColor: colors.warningSoft, marginBottom: spacing.md, padding: spacing.md }} onPress={() => router.push("/settings")} testID="demo-banner">
           <T v="label" color={colors.warningText}>Mode demo aktif — angka di bawah adalah data contoh. Ketuk untuk menghapus.</T>
@@ -197,7 +198,7 @@ export default function Dashboard() {
         ))}
       </Card>
 
-      <SectionTitle title="Aktivitas terbaru" />
+      <SectionTitle title="Aktivitas terbaru" action="Lihat semua" onAction={() => router.push("/activities")} testID="activities-see-all" />
       <Card testID="activity-card">
         {db.activities.length === 0 ? <T v="caption">Belum ada aktivitas.</T> : db.activities.slice(0, 6).map((a: any, i: number) => (
           <View key={a.id} style={{ flexDirection: "row", gap: spacing.md, paddingVertical: spacing.sm, borderTopWidth: i ? 1 : 0, borderTopColor: colors.divider }}>
