@@ -4,7 +4,7 @@ import { View } from "react-native";
 import { Button, Card, Chips, Divider, EmptyState, PickerSheet, Screen, T, useUI } from "@/src/components/ui";
 import { inventoryValue, payables, receivables, stockMap, summary, topProducts } from "@/src/data/selectors";
 import { useDB, type DBState } from "@/src/data/store";
-import type { FinanceEntry, Product, Purchase, Sale } from "@/src/data/types";
+import { tracksStock, type FinanceEntry, type Product, type Purchase, type Sale } from "@/src/data/types";
 import { useAuth } from "@/src/auth";
 import { methodLabel } from "@/src/lib/docs";
 import { exportCSV, sharePdf, tableHtml, wrapHtml, html as esc } from "@/src/lib/export";
@@ -54,7 +54,7 @@ function build(db: DBState, t: RType, period: Period, cat: string, productId: st
     }
     case "stock": {
       const st = stockMap(db);
-      const list = (db.products as Product[]).filter((p) => !p.archived && catOk(p.id));
+      const list = (db.products as Product[]).filter((p) => !p.archived && tracksStock(p) && catOk(p.id));
       return { headers: ["Produk", "Kategori", "Stok", "Min.", "Nilai"], right: [2, 3, 4], rows: list.map((p) => [p.name, p.category, `${st[p.id] ?? 0} ${p.unit}`, p.min_stock, rp(Math.max(0, st[p.id] ?? 0) * p.cost_price)]), total: `Nilai persediaan ${rp(inventoryValue(db))}` };
     }
     case "top": {

@@ -3,7 +3,12 @@ export type Base = { id: string; business_id?: string; created_at: string; updat
 export type Product = Base & {
   name: string; sku: string; barcode: string; category: string; description: string;
   cost_price: number; sell_price: number; min_stock: number; unit: string; archived: boolean; photo_file_id?: string | null;
+  /** "barang" (default) uses stock; "jasa" = service or rental (kost room, per night, per job): no stock. */
+  kind?: ProductKind;
 };
+export type ProductKind = "barang" | "jasa";
+/** True for physical goods; services and rentals never run out of stock. */
+export const tracksStock = (p: { kind?: ProductKind }) => p.kind !== "jasa";
 export type MovementType = "awal" | "masuk" | "keluar" | "penyesuaian" | "penjualan" | "pembelian";
 export type StockMovement = Base & { product_id: string; type: MovementType; qty: number; note: string; ref_id?: string };
 export type Contact = Base & { name: string; phone: string; email: string; address: string; notes: string; archived?: boolean };

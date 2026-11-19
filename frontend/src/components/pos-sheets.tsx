@@ -3,7 +3,7 @@ import { Pressable, View } from "react-native";
 
 import { Button, Divider, Field, Icon, IconButton, PickerSheet, Segment, Sheet, T, useUI } from "@/src/components/ui";
 import type { CartLine } from "@/src/data/actions";
-import type { Business, Contact, PayMethod, Sale } from "@/src/data/types";
+import { tracksStock, type Business, type Contact, type PayMethod, type Sale } from "@/src/data/types";
 import { BluetoothPrintButton } from "@/src/components/bt-print-button";
 import { receiptHtml } from "@/src/lib/docs";
 import { cartProfit, pct } from "@/src/lib/profit";
@@ -86,7 +86,8 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
   }, [cart.length, visible, onClose]);
 
   const setQty = (id: string, qty: number) => {
-    if (qty > (stock[id] ?? 0)) return toast("Stok tidak cukup", "error");
+    const line = cart.find((l) => l.product.id === id);
+    if (line && tracksStock(line.product) && qty > (stock[id] ?? 0)) return toast("Stok tidak cukup", "error");
     setCart((c) => (qty <= 0 ? c.filter((l) => l.product.id !== id) : c.map((l) => (l.product.id === id ? { ...l, qty } : l))));
   };
   const quick = [total, Math.ceil(total / 50000) * 50000, Math.ceil(total / 100000) * 100000].filter((v, i, a) => v > 0 && a.indexOf(v) === i);
@@ -123,9 +124,8 @@ export function CheckoutSheet({ visible, onClose, cart, setCart, stock, customer
                 const left = (stock[l.product.id] ?? 0) - l.qty;
                 return (
                   <T v="caption" numberOfLines={2} testID={`cart-line-${i}-owner`}>
-                    {l.product.cost_price ? <T v="caption" color={lineProfit >= 0 ? colors.success : colors.error}>{lineProfit >= 0 ? "untung" : "rugi"} {rp(Math.abs(lineProfit))}</T> : <T v="caption" color={colors.warningText}>modal belum diisi</T>}
-                    {" · "}
-                    <T v="caption" color={left <= 0 ? colors.error : left <= l.product.min_stock ? colors.warningText : colors.muted}>{left <= 0 ? "stok habis setelah ini" : `sisa stok ${left} ${l.product.unit}`}</T>
+                    {l.product.cost_price || !tracksStock(l.product) ? <T v="caption" color={lineProfit >= 0 ? colors.success : colors.error}>{lineProfit >= 0 ? "untung" : "rugi"} {rp(Math.abs(lineProfit))}</T> : <T v="caption" color={colors.warningText}>modal belum diisi</T>}
+                    {tracksStock(l.product) ? <>{" · "}<T v="caption" color={left <= 0 ? colors.error : left <= l.product.min_stock ? colors.warningText : colors.muted}>{left <= 0 ? "stok habis setelah ini" : `sisa stok ${left} ${l.product.unit}`}</T></> : <>{" · "}<T v="caption" color={colors.muted}>{`${l.qty} ${l.product.unit}`}</T></>}
                   </T>
                 );
               })() : null}

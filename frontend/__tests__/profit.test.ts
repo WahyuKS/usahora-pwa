@@ -26,3 +26,10 @@ describe("profit shown while selling (owner view)", () => {
     expect(cartProfit([], 0)).toMatchObject({ revenue: 0, profit: 0, margin: 0 });
   });
 });
+
+describe("services in the profit view", () => {
+  it("a service without cost is not flagged as missing cost", () => {
+    const r = cartProfit([{ qty: 1, discount: 0, product: { sell_price: 800000, cost_price: 0, kind: "jasa" } }], 0);
+    expect(r).toMatchObject({ profit: 800000, missingCost: 0 });
+  });
+});

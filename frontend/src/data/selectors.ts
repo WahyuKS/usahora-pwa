@@ -1,6 +1,6 @@
 import { addDays, addMonths, dayKey, inRange, rangeOf, type Period } from "@/src/lib/format";
 import type { DBState } from "./store";
-import type { Bill, FinanceEntry, Invoice, Product, Purchase, Sale } from "./types";
+import { tracksStock, type Bill, type FinanceEntry, type Invoice, type Product, type Purchase, type Sale } from "./types";
 
 export function stockMap(s: DBState): Record<string, number> {
   const m: Record<string, number> = {};
@@ -69,13 +69,13 @@ export function topProducts(s: DBState, period: Period, limit = 5) {
 export function lowStock(s: DBState) {
   const st = stockMap(s);
   return (s.products as Product[])
-    .filter((p) => !p.archived && (st[p.id] ?? 0) <= p.min_stock)
+    .filter((p) => !p.archived && tracksStock(p) && (st[p.id] ?? 0) <= p.min_stock)
     .map((p) => ({ p, stock: st[p.id] ?? 0 }));
 }
 
 export function inventoryValue(s: DBState) {
   const st = stockMap(s);
-  return (s.products as Product[]).filter((p) => !p.archived).reduce((a, p) => a + Math.max(0, st[p.id] ?? 0) * p.cost_price, 0);
+  return (s.products as Product[]).filter((p) => !p.archived && tracksStock(p)).reduce((a, p) => a + Math.max(0, st[p.id] ?? 0) * p.cost_price, 0);
 }
 
 /** Sales chart buckets: per day for short periods, per month for the year. */

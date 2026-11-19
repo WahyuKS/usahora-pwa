@@ -10,7 +10,7 @@ import { CheckoutSheet, ReceiptSheet } from "@/src/components/pos-sheets";
 import { checkout, type CartLine } from "@/src/data/actions";
 import { paidMap, stockMap, summary } from "@/src/data/selectors";
 import { useDB } from "@/src/data/store";
-import type { Product, Sale } from "@/src/data/types";
+import { tracksStock, type Product, type Sale } from "@/src/data/types";
 import { rp } from "@/src/lib/format";
 import { cartProfit, pct } from "@/src/lib/profit";
 import { usesNativeTabs } from "@/src/navigation";
@@ -57,7 +57,7 @@ export default function POS() {
 
   const add = (p: Product) => {
     const cur = qtyOf(p.id);
-    if (cur + 1 > (stock[p.id] ?? 0)) return toast(`Stok ${p.name} tidak cukup`, "error");
+    if (tracksStock(p) && cur + 1 > (stock[p.id] ?? 0)) return toast(`Stok ${p.name} tidak cukup`, "error");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setCart((c) => (cur ? c.map((l) => (l.product.id === p.id ? { ...l, qty: l.qty + 1 } : l)) : [...c, { product: p, qty: 1, discount: 0 }]));
   };
@@ -76,7 +76,7 @@ export default function POS() {
 
   const bottomChrome = usesNativeTabs ? insets.bottom : 0;
   return (
-    <Screen tab back={false} title="Jual" subtitle={`Catat penjualan · ${products.length} produk aktif`} scroll={false} right={<><IconButton icon="scan-barcode" bg={colors.brandTertiary} color={colors.brandPrimary} onPress={() => setScan(true)} testID="pos-scan-button" label="Scan barcode" /><SyncPill /></>} testID="pos-screen"
+    <Screen tab back={false} title="Jual" subtitle={`Catat penjualan · ${products.length} produk aktif`} scroll={false} right={<>{isOwner ? <IconButton icon="plus" bg={colors.brandPrimary} color={colors.onBrandPrimary} onPress={() => router.push("/product-form")} testID="pos-add-product-button" label="Tambah produk atau jasa" /> : null}<IconButton icon="scan-barcode" bg={colors.brandTertiary} color={colors.brandPrimary} onPress={() => setScan(true)} testID="pos-scan-button" label="Scan barcode" /><SyncPill /></>} testID="pos-screen"
       headerExtra={
         <View style={{ marginHorizontal: -spacing.sm }}>
           <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xs }}>
@@ -86,7 +86,7 @@ export default function POS() {
         </View>
       }>
       {products.length === 0 ? (
-        <EmptyState icon="package" title="Belum ada produk" message="Tambahkan produk terlebih dahulu agar bisa dicatat penjualannya." action="Tambah produk" onAction={() => router.push("/product-form")} testID="pos-empty" />
+        <EmptyState icon="package" title="Belum ada produk" message="Tambahkan barang, jasa, atau sewa (misalnya kamar kost per bulan) agar bisa dicatat penjualannya." action="Tambah produk / jasa" onAction={() => router.push("/product-form")} testID="pos-empty" />
       ) : (
         <FlatList
           key={cols}
@@ -109,14 +109,21 @@ export default function POS() {
             </View>
           ) : undefined}
           columnWrapperStyle={{ gap: spacing.sm }}
+          ListFooterComponent={isOwner ? (
+            <Pressable onPress={() => router.push("/product-form")} testID="pos-add-tile" style={({ pressed }) => [{ marginTop: spacing.sm, minHeight: 56, borderRadius: radius.lg, borderWidth: 1, borderStyle: "dashed", borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: spacing.sm }, pressed && { opacity: 0.7 }]}>
+              <T v="label" color={colors.brandPrimary}>+ Tambah produk, jasa, atau sewa</T>
+            </Pressable>
+          ) : undefined}
           ListEmptyComponent={<T v="caption" align="center" style={{ marginTop: spacing.xl }}>Produk tidak ditemukan.</T>}
           renderItem={({ item: p, index }) => {
             const st = stock[p.id] ?? 0;
             const inCart = qtyOf(p.id);
-            const out = st <= 0;
+            const stocked = tracksStock(p);
+            const out = stocked && st <= 0;
+            const restock = () => (isOwner ? router.push({ pathname: "/product/[id]", params: { id: p.id, stock: "masuk" } }) : toast(`Stok ${p.name} habis`, "error"));
             return (
-              <Pressable testID={`pos-product-${index}`} onPress={() => add(p)} disabled={out}
-                style={({ pressed }) => [{ flex: 1 / cols, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: inCart ? colors.brandPrimary : colors.border, padding: spacing.md, minHeight: 116, opacity: out ? 0.5 : 1 }, pressed && { transform: [{ scale: 0.97 }] }]}>
+              <Pressable testID={`pos-product-${index}`} onPress={() => (out ? restock() : add(p))}
+                style={({ pressed }) => [{ flex: 1 / cols, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: inCart ? colors.brandPrimary : colors.border, padding: spacing.md, minHeight: 116, opacity: out ? 0.7 : 1 }, pressed && { transform: [{ scale: 0.97 }] }]}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                   <Thumb fileId={p.photo_file_id} label={p.name} size={p.photo_file_id ? 56 : 36} />
                   {inCart ? <View style={{ minWidth: 26, height: 26, borderRadius: 13, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 }}><T v="caption" weight="bold" color={colors.onBrandPrimary}>{inCart}</T></View> : null}
@@ -124,14 +131,14 @@ export default function POS() {
                 <T v="label" numberOfLines={2} style={{ marginTop: spacing.sm }}>{p.name}</T>
                 <T v="label" weight="bold" color={colors.brandPrimary} style={{ marginTop: 2 }}>{rp(p.sell_price)}</T>
                 {isOwner ? (
-                  p.cost_price > 0 ? (
+                  p.cost_price > 0 || !stocked ? (
                     <T v="caption" color={p.sell_price - p.cost_price >= 0 ? colors.success : colors.error} numberOfLines={1} testID={`pos-product-profit-${index}`}>
                       {p.sell_price - p.cost_price >= 0 ? "Untung" : "Rugi"} {rp(Math.abs(p.sell_price - p.cost_price))} · {pct((p.sell_price - p.cost_price) / (p.sell_price || 1))}
                     </T>
                   ) : <T v="caption" color={colors.warningText} numberOfLines={1}>Modal belum diisi</T>
                 ) : undefined}
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4, gap: 4 }}>
-                  <T v="caption" color={out ? colors.error : st <= p.min_stock ? colors.warningText : colors.muted} numberOfLines={1} style={{ flexShrink: 1 }}>{out ? "Stok habis" : st <= p.min_stock ? `Menipis · ${st} ${p.unit}` : `Stok ${st} ${p.unit}`}</T>
+                  <T v="caption" color={!stocked ? colors.brandPrimary : out ? colors.error : st <= p.min_stock ? colors.warningText : colors.muted} numberOfLines={1} style={{ flexShrink: 1 }}>{!stocked ? `Jasa · per ${p.unit}` : out ? (isOwner ? "Habis · ketuk + stok" : "Stok habis") : st <= p.min_stock ? `Menipis · ${st} ${p.unit}` : `Stok ${st} ${p.unit}`}</T>
                   {isOwner && soldToday[p.id] ? <T v="caption" color={colors.muted} numberOfLines={1}>{soldToday[p.id]} terjual</T> : null}
                 </View>
               </Pressable>

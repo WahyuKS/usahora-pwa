@@ -1,7 +1,7 @@
 import { addDays, addMonths, dateKeyToISO, dayKey, nowISO, rp, uuid } from "@/src/lib/format";
 import { ENTITIES, getState, mergeAll, nextNumber, remove, replaceAll, setMeta, upsert, type DBState, type MergeReport } from "./store";
 import { paidMap, stockMap } from "./selectors";
-import type { Bill, Contact, FinanceEntry, Invoice, InvoiceItem, MovementType, PayMethod, Product, Purchase, PurchaseItem, Sale } from "./types";
+import { tracksStock, type Bill, type Contact, type FinanceEntry, type Invoice, type InvoiceItem, type MovementType, type PayMethod, type Product, type Purchase, type PurchaseItem, type Sale } from "./types";
 
 export class ValidationError extends Error {}
 let actor = "";
@@ -27,7 +27,7 @@ export function saveProduct(p: Partial<Product>, initialStock = 0, stockAt?: str
     barcode: "", category: "Umum", description: "", unit: "pcs", min_stock: 0, archived: false, ...p,
     name: p.name!.trim(), sku: sku ?? "",
   });
-  if (isNew && initialStock > 0) addMovement(rec.id, "awal", initialStock, "Stok awal", undefined, p.is_demo, stockAt);
+  if (isNew && initialStock > 0 && tracksStock(rec)) addMovement(rec.id, "awal", initialStock, "Stok awal", undefined, p.is_demo, stockAt);
   logActivity("product", `${isNew ? "Menambahkan" : "Memperbarui"} produk ${rec.name}`, p.is_demo);
   return rec as Product;
 }
@@ -71,9 +71,9 @@ export function checkout(input: {
   const st = stockMap(getState());
   const items = input.lines.map((l) => {
     must(l.qty > 0, `Jumlah ${l.product.name} tidak valid`);
-    must((st[l.product.id] ?? 0) >= l.qty, `Stok ${l.product.name} tidak cukup (tersisa ${st[l.product.id] ?? 0})`);
+    if (tracksStock(l.product)) must((st[l.product.id] ?? 0) >= l.qty, `Stok ${l.product.name} tidak cukup (tersisa ${st[l.product.id] ?? 0})`);
     must(l.discount >= 0 && l.discount <= l.qty * l.product.sell_price, `Diskon ${l.product.name} melebihi harga`);
-    return { product_id: l.product.id, name: l.product.name, qty: l.qty, price: l.product.sell_price, cost: l.product.cost_price, discount: l.discount };
+    return { product_id: l.product.id, name: l.product.name, qty: l.qty, price: l.product.sell_price, cost: l.product.cost_price, discount: l.discount, stocked: tracksStock(l.product) };
   });
   const subtotal = items.reduce((a, i) => a + i.qty * i.price - i.discount, 0);
   must(input.discount >= 0 && input.discount <= subtotal, "Diskon transaksi melebihi subtotal");
@@ -85,12 +85,13 @@ export function checkout(input: {
   const demo = input.is_demo ? { is_demo: true } : {};
   const at = input.created_at ? { created_at: input.created_at } : {};
   const sale = upsert("sales", {
-    number: nextNumber("TRX"), customer_id: input.customer_id, items, subtotal, discount: input.discount, total,
+    number: nextNumber("TRX"), customer_id: input.customer_id, items: items.map(({ stocked: _s, ...i }) => i), subtotal, discount: input.discount, total,
     cogs: items.reduce((a, i) => a + i.qty * i.cost, 0), method: input.method, received: input.received,
     change: Math.max(0, input.received - total), note: input.note, cashier_name: actor, ...demo, ...at,
     due_date: input.received < total ? input.due_date ?? null : null,
   }) as Sale;
-  items.forEach((i) => addMovement(i.product_id, "penjualan", -i.qty, `Penjualan ${sale.number}`, sale.id, input.is_demo, input.created_at));
+  // Services and rentals (kind "jasa") have no stock, so no stock movement.
+  items.filter((i) => i.stocked).forEach((i) => addMovement(i.product_id, "penjualan", -i.qty, `Penjualan ${sale.number}`, sale.id, input.is_demo, input.created_at));
   if (paid > 0) upsert("payments", { sale_id: sale.id, amount: paid, method: input.method, ...demo, ...at }, { silent: true });
   logActivity("sale", `Penjualan ${sale.number} sebesar ${rp(total)}`, input.is_demo);
   return sale;
