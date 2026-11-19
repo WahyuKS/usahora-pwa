@@ -275,8 +275,8 @@ export function buildBackup(business: { id: string; name: string } | null) {
 }
 
 export function validateBackup(obj: any): string | null {
-  if (!obj || typeof obj !== "object") return "File bukan JSON yang valid";
-  if (obj.app !== "usahora") return "File ini bukan backup USAHORA";
+  if (!obj || typeof obj !== "object") return "File tidak bisa dibaca. Pilih file cadangan USAHORA.";
+  if (obj.app !== "usahora") return "File ini bukan file cadangan USAHORA.";
   for (const e of ENTITIES) {
     if (obj[e] !== undefined && !Array.isArray(obj[e])) return `Bagian "${e}" rusak`;
     if (Array.isArray(obj[e]) && obj[e].some((r: any) => !r || typeof r.id !== "string")) return `Data "${e}" tidak memiliki ID yang valid`;
@@ -286,7 +286,7 @@ export function validateBackup(obj: any): string | null {
 
 export function restoreBackup(obj: Partial<DBState>) {
   replaceAll(obj);
-  logActivity("backup", "Data dipulihkan dari backup");
+  logActivity("backup", "Data dipulihkan dari file cadangan");
 }
 
 /** Combine a backup from another device with the data on this device (nothing here is deleted). */

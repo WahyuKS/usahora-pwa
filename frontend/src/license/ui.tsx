@@ -4,7 +4,7 @@ import { Linking, Platform, View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { Badge, Button, Card, Field, T, useUI } from "@/src/components/ui";
-import { exportBackupNow } from "@/src/data/backup-export";
+import { backupMessage, exportBackupNow } from "@/src/data/backup-export";
 import { fmtDate } from "@/src/lib/format";
 import { spacing, useTheme } from "@/src/theme";
 
@@ -67,10 +67,10 @@ export function LicensePanel({ wall }: { wall?: boolean }) {
   };
   const backup = async () => {
     try {
-      await exportBackupNow(business);
-      toast("Backup berhasil dibuat");
+      const msg = backupMessage(await exportBackupNow(business));
+      if (msg) toast(msg);
     } catch {
-      toast("Gagal membuat backup", "error");
+      toast("Gagal menyimpan cadangan. Coba lagi.", "error");
     }
   };
 
@@ -99,7 +99,7 @@ export function LicensePanel({ wall }: { wall?: boolean }) {
         <T v="label" color={colors.error} style={{ marginBottom: spacing.sm }}>Masa coba {TRIAL_DAYS} hari sudah berakhir</T>
       ) : null}
       {lic.kind === "trial" ? <T v="caption" style={{ marginBottom: spacing.md }}>Semua fitur bisa dipakai sampai {fmtDate(lic.endsAt)}. Setelah itu masukkan kode lisensi untuk lanjut. Data Anda tetap aman.</T> : null}
-      {lic.kind === "expired" ? <T v="body" style={{ marginBottom: spacing.md }}>Data Anda tetap aman di perangkat ini. Masukkan kode lisensi untuk lanjut memakai USAHORA, atau ekspor backup data Anda.</T> : null}
+      {lic.kind === "expired" ? <T v="body" style={{ marginBottom: spacing.md }}>Data Anda tetap aman di perangkat ini. Masukkan kode lisensi untuk lanjut memakai USAHORA, atau simpan cadangan data Anda.</T> : null}
       <DeviceIdBox />
       <Field label="Kode lisensi" value={code} onChangeText={setCode} placeholder="USAHORA-..." autoCapitalize="none" autoCorrect={false} multiline testID="license-code-input" />
       {error ? <T v="caption" color={colors.error} style={{ marginBottom: spacing.md }} testID="license-error">{error}</T> : null}
@@ -109,7 +109,7 @@ export function LicensePanel({ wall }: { wall?: boolean }) {
       ) : (
         <T v="caption" style={{ marginTop: spacing.sm }}>Belum punya kode? Hubungi penjual USAHORA tempat Anda membeli.</T>
       )}
-      {wall ? <Button title="Ekspor backup data" icon="download" variant="secondary" style={{ marginTop: spacing.sm }} onPress={backup} testID="license-backup-button" /> : null}
+      {wall ? <Button title="Simpan cadangan data" icon="download" variant="secondary" style={{ marginTop: spacing.sm }} onPress={backup} testID="license-backup-button" /> : null}
     </Card>
   );
 }

@@ -67,7 +67,7 @@ Tanpa variabel itu, aplikasi menulis "Hubungi penjual USAHORA tempat Anda membel
 
 | Topik | Kenyataan |
 |---|---|
-| Penyimpanan | Data tersimpan di browser/HP pembeli (IndexedDB), **tidak di server**. Hapus data browser / ganti HP tanpa backup = data hilang. Wajib backup rutin (aplikasi mengingatkan tiap 7 hari). |
+| Penyimpanan | Data tersimpan di browser/HP pembeli (IndexedDB), **tidak di server**. Hapus data browser / ganti HP tanpa backup = data hilang. Wajib simpan cadangan rutin lewat Pengaturan → Cadangan data (aplikasi mengingatkan tiap 7 hari; di HP file bisa langsung dikirim ke Google Drive atau WhatsApp). |
 | iPhone | Pasang ke layar utama (Safari → Bagikan → Add to Home Screen). Tanpa itu, Safari bisa menghapus data situs yang tidak dibuka ±7 hari. |
 | Beberapa perangkat | Tidak ada sinkronisasi otomatis. Bisa **pindah perangkat** (Impor backup) dan **menggabungkan data** dari perangkat lain secara manual (Pengaturan → Gabungkan dari perangkat lain). Penghapusan tidak ikut tergabung. |
 | Printer Bluetooth | Struk 58 mm ESC/POS lewat **Chrome/Edge di Android atau laptop** dengan printer BLE. **Tidak bisa di iPhone** (Safari tidak mendukung Bluetooth web). Printer Bluetooth klasik (non-BLE) tidak terjangkau dari browser. Alternatif selalu ada: Cetak / Bagikan PDF. |

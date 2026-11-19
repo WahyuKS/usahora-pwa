@@ -41,7 +41,7 @@ export default function More() {
       items: [
         { title: "Laporan", sub: "Penjualan, laba rugi, stok, ekspor", icon: "chart-column", href: "/reports" },
         { title: "Dokumen & SOP", sub: "Template SOP dan checklist", icon: "book-open", href: "/docs" },
-        { title: "Pengaturan", sub: "Profil usaha, sinkronisasi, backup", icon: "settings", href: "/settings" },
+        { title: "Pengaturan", sub: "Profil usaha dan cadangan data", icon: "settings", href: "/settings" },
         ...(isLocal ? [{ title: "Lisensi", sub: "Status masa coba dan aktivasi", icon: "key-round" as IconName, href: "/license" as Href }] : []),
       ],
     },

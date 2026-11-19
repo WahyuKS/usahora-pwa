@@ -73,7 +73,7 @@ function LocalStart() {
           <Button title="Mulai sekarang" onPress={go} loading={busy} size="lg" testID="local-start-button" />
         </>
       )}
-      <T v="caption" style={{ marginTop: spacing.md }}>Tanpa akun dan bisa dipakai offline. Data hanya tersimpan di perangkat/browser ini, jadi lakukan backup secara rutin dari menu Pengaturan.</T>
+      <T v="caption" style={{ marginTop: spacing.md }}>Tanpa akun dan bisa dipakai offline. Data hanya tersimpan di perangkat ini, jadi simpan cadangan data secara rutin (aplikasi akan mengingatkan).</T>
     </View>
   );
 }

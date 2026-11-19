@@ -10,12 +10,12 @@ import { hasDemo } from "@/src/data/selectors";
 import { PhotoPicker } from "@/src/components/media";
 import { StaffSection } from "@/src/components/staff";
 import { lastPersistError, setMeta, useDB } from "@/src/data/store";
+import { backupMessage, exportBackupNow, NOT_A_BACKUP } from "@/src/data/backup-export";
 import { storageInfo, type StorageInfo } from "@/src/data/persistence";
 import { resolveConflict, syncNow, useSync } from "@/src/data/sync";
 import type { Business } from "@/src/data/types";
 import { api } from "@/src/lib/api";
-import { shareText } from "@/src/lib/export";
-import { dayKey, fmtDateTime, toNum } from "@/src/lib/format";
+import { fmtDateTime, toNum } from "@/src/lib/format";
 import { spacing, useTheme } from "@/src/theme";
 
 const ENTITY_LABEL: Record<string, string> = { products: "Produk", customers: "Pelanggan", suppliers: "Supplier", invoices: "Invoice", bills: "Tagihan", docs: "Dokumen", purchases: "Pembelian", finance: "Keuangan" };
@@ -53,11 +53,10 @@ export default function Settings() {
 
   const exportBackup = async () => {
     try {
-      await shareText(JSON.stringify(buildBackup(business), null, 1), `usahora-backup-${dayKey()}.json`, "application/json");
-      setMeta({ lastBackupAt: new Date().toISOString() });
-      toast("Backup berhasil dibuat");
+      const msg = backupMessage(await exportBackupNow(business));
+      if (msg) toast(msg);
     } catch {
-      toast("Gagal membuat backup", "error");
+      toast("Gagal menyimpan cadangan. Coba lagi.", "error");
     }
   };
 
@@ -66,9 +65,10 @@ export default function Settings() {
     if (err) return toast(err, "error");
     const otherDevice = !!obj.business_id && obj.business_id !== user?.business_id;
     // Cloud accounts: never mix businesses. Local mode: another business id means another device/browser.
-    if (otherDevice && !isLocal) return toast("Backup ini milik usaha lain dan tidak dapat dipulihkan ke akun ini", "error");
+    if (otherDevice && !isLocal) return toast("File cadangan ini milik usaha lain dan tidak dapat dipulihkan ke akun ini", "error");
     const count = ["products", "sales", "customers", "invoices"].map((k) => `${(obj[k] ?? []).length} ${ENTITY_LABEL[k] ?? k}`).join(", ");
-    const ok = await confirm({ title: "Pulihkan data?", message: `${otherDevice ? `Backup ini dari perangkat lain ("${obj.business_name ?? "-"}"). ` : ""}Data di perangkat ini akan DIGANTI dengan isi backup ${source} (${count}, dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}). Tindakan ini tidak dapat dibatalkan.`, confirmText: "Pulihkan", danger: true });
+    const from = source === "cloud" ? "cadangan cloud" : "file cadangan";
+    const ok = await confirm({ title: "Pulihkan data?", message: `${otherDevice ? `File ini dari HP/laptop lain ("${obj.business_name ?? "-"}"). ` : ""}Semua data di perangkat ini akan DIGANTI dengan isi ${from} (${count}, dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}). Tindakan ini tidak dapat dibatalkan.`, confirmText: "Pulihkan", danger: true });
     if (!ok) return;
     restoreBackup(obj);
     toast("Data berhasil dipulihkan");
@@ -82,7 +82,7 @@ export default function Settings() {
     try {
       return JSON.parse(text);
     } catch {
-      toast("File bukan JSON yang valid", "error");
+      toast(NOT_A_BACKUP, "error");
       return null;
     }
   };
@@ -93,27 +93,22 @@ export default function Settings() {
       if (!obj) return;
       const err = validateBackup(obj);
       if (err) return toast(err, "error");
-      if (obj.business_id && obj.business_id !== user?.business_id && !isLocal) return toast("Backup ini milik usaha lain dan tidak dapat digabungkan ke akun ini", "error");
-      const ok = await confirm({ title: "Gabungkan data?", message: `Data dari backup "${obj.business_name ?? "-"}" (dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}) akan DITAMBAHKAN ke perangkat ini. Data yang sama digabung, versi terbaru dipakai, dan tidak ada data di perangkat ini yang dihapus.`, confirmText: "Gabungkan" });
+      if (obj.business_id && obj.business_id !== user?.business_id && !isLocal) return toast("File cadangan ini milik usaha lain dan tidak dapat digabungkan ke akun ini", "error");
+      const ok = await confirm({ title: "Gabungkan data?", message: `Data dari file cadangan "${obj.business_name ?? "-"}" (dibuat ${obj.exported_at ? fmtDateTime(obj.exported_at) : "-"}) akan DITAMBAHKAN ke perangkat ini. Data yang sama digabung, versi terbaru dipakai, dan tidak ada data di perangkat ini yang dihapus.`, confirmText: "Gabungkan" });
       if (!ok) return;
       const r = mergeBackup(obj);
       toast(`Selesai: ${r.added} data baru, ${r.updated} diperbarui`);
     } catch {
-      toast("Gagal membaca file backup", "error");
+      toast("Gagal membaca file cadangan", "error");
     }
   };
 
   const importBackup = async () => {
     try {
-      const res = await DocumentPicker.getDocumentAsync({ type: ["application/json", "*/*"], copyToCacheDirectory: true });
-      if (res.canceled) return;
-      const uri = res.assets[0].uri;
-      const text = Platform.OS === "web" ? await (await fetch(uri)).text() : await new File(uri).text();
-      let obj: any;
-      try { obj = JSON.parse(text); } catch { return toast("File bukan JSON yang valid", "error"); }
-      await doRestore(obj, "file");
+      const obj = await readBackupFile();
+      if (obj) await doRestore(obj, "file");
     } catch {
-      toast("Gagal membaca file backup", "error");
+      toast("Gagal membaca file cadangan", "error");
     }
   };
 
@@ -151,9 +146,9 @@ export default function Settings() {
           <Badge label={sync.online ? "Online" : "Offline"} tone={sync.online ? "success" : "warning"} />
         </View>
         <T v="caption" style={{ marginTop: 4 }}>Semua data tersimpan di perangkat/browser ini dan bisa dipakai tanpa internet. Data tidak dikirim ke server mana pun.</T>
-        {store ? <T v="caption" style={{ marginTop: spacing.sm }} testID="storage-engine-text">Penyimpanan: {store.engine === "indexeddb" ? "IndexedDB" : store.engine === "localstorage" ? "localStorage (mode cadangan)" : "perangkat"}{store.persisted === true ? " · dilindungi dari pembersihan otomatis browser" : store.persisted === false ? " · browser belum mengizinkan penyimpanan permanen" : ""}</T> : null}
-        {lastPersistError ? <T v="caption" color={colors.error} style={{ marginTop: 4 }}>Gagal menyimpan perubahan terakhir: {lastPersistError}. Segera ekspor backup.</T> : null}
-        <T v="caption" color={colors.warningText} style={{ marginTop: spacing.sm }}>Penting: menghapus data browser, uninstall, atau ganti perangkat akan menghilangkan data. Ekspor backup JSON secara rutin.</T>
+        {store ? <T v="caption" style={{ marginTop: spacing.sm }} testID="storage-engine-text">{store.engine === "localstorage" ? "Penyimpanan: mode darurat browser (kapasitas kecil). Segera simpan cadangan data." : "Penyimpanan: penyimpanan utama perangkat"}{store.persisted === true ? " · dilindungi dari pembersihan otomatis" : store.persisted === false ? " · pasang USAHORA ke layar utama agar lebih aman" : ""}</T> : null}
+        {lastPersistError ? <T v="caption" color={colors.error} style={{ marginTop: 4 }}>Perubahan terakhir gagal tersimpan ({lastPersistError}). Segera simpan cadangan data.</T> : null}
+        <T v="caption" color={colors.warningText} style={{ marginTop: spacing.sm }}>Penting: jika data browser dihapus, aplikasi di-uninstall, atau ganti HP, data ikut hilang. Simpan cadangan data secara rutin (lihat bagian Cadangan data di bawah).</T>
       </Card>
       </>) : (<>
       <SectionTitle title="Sinkronisasi cloud" />
@@ -222,17 +217,19 @@ export default function Settings() {
 
       {isLocal ? null : <StaffSection />}
 
-      <SectionTitle title="Backup & restore" />
+      <SectionTitle title="Cadangan data (backup)" />
       <Card testID="backup-card">
-        <T v="caption" testID="last-backup-text">Backup terakhir: {db.meta.lastBackupAt ? fmtDateTime(db.meta.lastBackupAt) : "belum pernah"}{db.meta.lastCloudBackupAt ? ` · cloud ${fmtDateTime(db.meta.lastCloudBackupAt)}` : ""}</T>
+        <T v="body">File cadangan berisi semua data usaha Anda: produk, stok, penjualan, pelanggan, dan keuangan. Simpan file ini di tempat aman, misalnya Google Drive atau kirim ke WhatsApp Anda sendiri.</T>
+        <T v="caption" style={{ marginTop: spacing.sm }} testID="last-backup-text">Cadangan terakhir: {db.meta.lastBackupAt ? fmtDateTime(db.meta.lastBackupAt) : "belum pernah"}{db.meta.lastCloudBackupAt ? ` · cloud ${fmtDateTime(db.meta.lastCloudBackupAt)}` : ""}</T>
         <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
-          <Button title="Ekspor backup JSON" icon="download" variant="secondary" onPress={exportBackup} testID="backup-export-button" />
-          <Button title="Impor backup JSON (ganti semua)" icon="upload" variant="outline" onPress={importBackup} testID="backup-import-button" />
-          <Button title="Gabungkan dari perangkat lain" icon="merge" variant="outline" onPress={mergeFromFile} testID="backup-merge-button" />
-          {isLocal ? null : <Button title="Backup ke cloud" icon="cloud-upload" variant="secondary" onPress={cloudBackup} loading={busy === "cloud"} testID="backup-cloud-button" />}
+          <Button title="Simpan cadangan sekarang" icon="download" onPress={exportBackup} testID="backup-export-button" />
+          <Button title="Pulihkan dari file cadangan" icon="upload" variant="outline" onPress={importBackup} testID="backup-import-button" />
+          <Button title="Gabungkan data dari HP/laptop lain" icon="merge" variant="outline" onPress={mergeFromFile} testID="backup-merge-button" />
+          {isLocal ? null : <Button title="Simpan cadangan ke cloud" icon="cloud-upload" variant="secondary" onPress={cloudBackup} loading={busy === "cloud"} testID="backup-cloud-button" />}
           {isLocal ? null : <Button title="Pulihkan dari cloud" icon="cloud" variant="outline" onPress={cloudRestore} loading={busy === "cloudr"} testID="backup-cloud-restore-button" />}
         </View>
-        <T v="caption" style={{ marginTop: spacing.sm }}>Pakai di beberapa perangkat: di perangkat baru pilih {"\"Impor backup\""} dari perangkat utama, lalu secara berkala ekspor backup di satu perangkat dan pilih {"\"Gabungkan\""} di perangkat lainnya. Ini bukan sinkronisasi otomatis; penghapusan tidak ikut terbawa.</T>
+        <T v="caption" style={{ marginTop: spacing.md }}>HP hilang atau ganti HP? Buka USAHORA di HP baru, tekan {"\"Pulihkan dari file cadangan\""}, lalu pilih file cadangan terakhir Anda (namanya diawali usahora-cadangan).</T>
+        <T v="caption" style={{ marginTop: spacing.sm }}>Pakai di HP dan laptop sekaligus? Simpan cadangan di satu perangkat, lalu di perangkat lain tekan {"\"Gabungkan data dari HP/laptop lain\""}. Data tidak tersambung otomatis, dan data yang dihapus tidak ikut terhapus di perangkat lain.</T>
         <T v="caption" style={{ marginTop: spacing.sm }}>Catatan: data lokal di perangkat belum dienkripsi khusus. Lindungi perangkat Anda dengan kunci layar.</T>
       </Card>
 
@@ -248,7 +245,7 @@ export default function Settings() {
           }} />
         )}
       </Card>
-      </>) : <T v="caption" style={{ marginTop: spacing.lg }}>Profil usaha, backup, dan akun karyawan hanya dapat diatur oleh pemilik.</T>}
+      </>) : <T v="caption" style={{ marginTop: spacing.lg }}>Profil usaha, cadangan data, dan akun karyawan hanya dapat diatur oleh pemilik.</T>}
       <T v="caption" align="center" style={{ marginTop: spacing.xl }}>USAHORA v1.0 · Business ID {user?.business_id.slice(0, 8)}</T>
     </Screen>
   );

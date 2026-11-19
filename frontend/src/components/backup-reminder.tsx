@@ -3,7 +3,7 @@ import { View } from "react-native";
 
 import { useAuth } from "@/src/auth";
 import { Button, Card, T, useUI } from "@/src/components/ui";
-import { BACKUP_REMINDER_DAYS, backupOverdue, exportBackupNow } from "@/src/data/backup-export";
+import { BACKUP_REMINDER_DAYS, backupMessage, backupOverdue, exportBackupNow } from "@/src/data/backup-export";
 import { useDB } from "@/src/data/store";
 import { fmtDate } from "@/src/lib/format";
 import { spacing, useTheme } from "@/src/theme";
@@ -23,10 +23,10 @@ export function BackupReminder() {
   const run = async () => {
     setBusy(true);
     try {
-      await exportBackupNow(business);
-      toast("Backup tersimpan. Simpan file ini di tempat aman (Google Drive, email, atau laptop).");
+      const msg = backupMessage(await exportBackupNow(business));
+      if (msg) toast(msg);
     } catch {
-      toast("Gagal membuat backup", "error");
+      toast("Gagal menyimpan cadangan. Coba lagi.", "error");
     } finally {
       setBusy(false);
     }
@@ -34,10 +34,10 @@ export function BackupReminder() {
   return (
     <Card testID="backup-reminder" style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.md, borderColor: colors.warning }}>
       <View style={{ flex: 1 }}>
-        <T v="label">{last ? `Backup terakhir ${fmtDate(last)}` : "Data Anda belum pernah di-backup"}</T>
-        <T v="caption">Data hanya tersimpan di perangkat ini. Backup minimal tiap {BACKUP_REMINDER_DAYS} hari agar aman jika HP hilang atau data browser terhapus.</T>
+        <T v="label">{last ? `Cadangan terakhir ${fmtDate(last)}` : "Data Anda belum punya cadangan"}</T>
+        <T v="caption">Simpan cadangan minimal tiap {BACKUP_REMINDER_DAYS} hari ke Google Drive atau WhatsApp Anda, supaya data aman jika HP hilang atau rusak.</T>
       </View>
-      <Button size="sm" title="Backup" icon="download" onPress={run} loading={busy} testID="backup-reminder-button" />
+      <Button size="sm" title="Simpan" icon="download" onPress={run} loading={busy} testID="backup-reminder-button" />
     </Card>
   );
 }
