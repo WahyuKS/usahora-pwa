@@ -63,10 +63,11 @@ export async function refreshLicense(): Promise<LicenseStatus> {
 }
 
 /** Verify and save a code. Returns an error message, or null when activated. */
-export async function activateLicense(raw: string): Promise<string | null> {
+export async function activateLicense(raw: string, opts: { refresh?: boolean } = {}): Promise<string | null> {
   const v = verifyLicense(raw, await getDeviceId());
   if (!v.ok) return v.error;
   if (!(await storage.setItem(LICENSE_KEY, normaliseCode(raw)))) return "Gagal menyimpan lisensi di perangkat ini. Coba lagi.";
-  await refreshLicense();
+  // The activation screen refreshes later itself, after its success animation.
+  if (opts.refresh !== false) await refreshLicense();
   return null;
 }

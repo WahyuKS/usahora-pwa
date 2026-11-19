@@ -10,9 +10,9 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { AuthProvider, useAuth } from "@/src/auth";
 import { ErrorBoundary } from "@/src/components/error-boundary";
-import { Loading, Screen, UIProvider } from "@/src/components/ui";
+import { Loading, UIProvider } from "@/src/components/ui";
 import { refreshLicense, useLicense } from "@/src/license/state";
-import { LicensePanel } from "@/src/license/ui";
+import { ActivationScreen } from "@/src/license/activation-screen";
 import { queryClient } from "@/src/query-client";
 import { loadThemePreference, useTheme } from "@/src/theme";
 
@@ -55,11 +55,7 @@ function Gate() {
   if (license.kind === "unlicensed") {
     // No free trial: the first screen asks for a license code. Data already on the device stays safe
     // and can be backed up from this screen.
-    return (
-      <Screen title="Aktifkan USAHORA" subtitle="Bayar sekali, tanpa langganan" back={false} testID="license-wall">
-        <LicensePanel wall />
-      </Screen>
-    );
+    return <ActivationScreen />;
   }
   return <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }} />;
 }
